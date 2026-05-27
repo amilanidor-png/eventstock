@@ -7,16 +7,18 @@ import Rentals from './pages/Rentals'
 import Customers from './pages/Customers'
 import Business from './pages/Business'
 import Calendar from './pages/Calendar'
+import Settings from './pages/Settings'
 import Login from './pages/Login'
 import GlobalSearch from './GlobalSearch'
 
 const NAV = [
-  { path: '/',          label: 'בקרה',   icon: '📊' },
-  { path: '/inventory', label: 'מלאי',   icon: '📦' },
-  { path: '/rentals',   label: 'השכרות', icon: '📋' },
-  { path: '/customers', label: 'לקוחות', icon: '👤' },
-  { path: '/calendar',  label: 'לוח שנה',icon: '📅' },
-  { path: '/business',  label: 'עסק',    icon: '💼' },
+  { path: '/',          label: 'בקרה',    icon: '📊' },
+  { path: '/inventory', label: 'מלאי',    icon: '📦' },
+  { path: '/rentals',   label: 'השכרות',  icon: '📋' },
+  { path: '/customers', label: 'לקוחות',  icon: '👤' },
+  { path: '/calendar',  label: 'לוח שנה', icon: '📅' },
+  { path: '/business',  label: 'עסק',     icon: '💼' },
+  { path: '/settings',  label: 'הגדרות',  icon: '⚙️' },
 ]
 
 export default function App() {
@@ -72,7 +74,7 @@ export default function App() {
 
         {mobile ? (
           <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-around', padding:'6px 0 8px', zIndex:100, boxShadow:'0 -4px 20px rgba(0,0,0,0.06)' }}>
-            {NAV.map(n => (
+            {NAV.slice(0,6).map(n => (
               <NavLink key={n.path} to={n.path} end={n.path === '/'}
                 style={({ isActive }) => ({
                   display:'flex', flexDirection:'column', alignItems:'center', gap:2,
@@ -84,10 +86,14 @@ export default function App() {
                 {n.label}
               </NavLink>
             ))}
-            <button onClick={() => supabase.auth.signOut()}
-              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none', color:'#94a3b8', fontSize:9, cursor:'pointer', padding:'4px 6px' }}>
-              <span style={{ fontSize:16 }}>🚪</span>יציאה
-            </button>
+            <NavLink to="/settings" style={({ isActive }) => ({
+              display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+              color: isActive ? '#6366f1' : '#94a3b8',
+              textDecoration:'none', fontSize:9, fontWeight: isActive ? 700 : 400,
+              padding:'4px 6px', borderRadius:8
+            })}>
+              <span style={{ fontSize:16 }}>⚙️</span>הגדרות
+            </NavLink>
           </nav>
         ) : (
           <aside style={{ width:230, background:'#fff', borderLeft:'1px solid #e2e8f0', display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:'2px 0 12px rgba(0,0,0,0.04)' }}>
@@ -115,7 +121,7 @@ export default function App() {
             </nav>
 
             <button
-              style={{ background:'transparent', border:'1px solid #e2e8f0', color:'#94a3b8', padding:'9px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s' }}
+              style={{ background:'transparent', border:'1px solid #e2e8f0', color:'#94a3b8', padding:'9px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s', marginTop:8 }}
               onMouseEnter={e => e.target.style.background='#fee2e2'}
               onMouseLeave={e => e.target.style.background='transparent'}
               onClick={() => supabase.auth.signOut()}>
@@ -133,6 +139,7 @@ export default function App() {
               <Route path="/customers" element={<Customers />} />
               <Route path="/calendar"  element={<Calendar />} />
               <Route path="/business"  element={<Business />} />
+              <Route path="/settings"  element={<Settings />} />
               <Route path="*"          element={<Navigate to="/" />} />
             </Routes>
           </div>
