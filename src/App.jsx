@@ -7,6 +7,7 @@ import Rentals from './pages/Rentals'
 import Customers from './pages/Customers'
 import Business from './pages/Business'
 import Login from './pages/Login'
+import GlobalSearch from './GlobalSearch'
 
 const NAV = [
   { path: '/',          label: 'בקרה',   icon: '📊' },
@@ -57,8 +58,6 @@ export default function App() {
         .nav-link:hover { background: #f1f5f9 !important; color: #1e293b !important; }
         .card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
         .card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important; transform: translateY(-1px); }
-        .btn-primary { transition: all 0.15s ease; }
-        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.3); }
         .fade-in { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
@@ -90,10 +89,14 @@ export default function App() {
           </nav>
         ) : (
           <aside style={{ width:230, background:'#fff', borderLeft:'1px solid #e2e8f0', display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:'2px 0 12px rgba(0,0,0,0.04)' }}>
-            <div style={{ padding:'4px 8px 28px', borderBottom:'1px solid #f1f5f9', marginBottom:16 }}>
+            <div style={{ padding:'4px 8px 20px', borderBottom:'1px solid #f1f5f9', marginBottom:16 }}>
               <div style={{ fontSize:18, fontWeight:800, color:'#1e293b', letterSpacing:'-0.3px' }}>🏔️ אוורסט</div>
               <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>השכרת ציוד אירועים</div>
             </div>
+
+            {/* חיפוש גלובלי */}
+            <GlobalSearch />
+
             <nav style={{ display:'flex', flexDirection:'column', gap:2, flex:1 }}>
               {NAV.map(n => (
                 <NavLink key={n.path} to={n.path} end={n.path === '/'}
@@ -109,6 +112,7 @@ export default function App() {
                 </NavLink>
               ))}
             </nav>
+
             <button
               style={{ background:'transparent', border:'1px solid #e2e8f0', color:'#94a3b8', padding:'9px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s' }}
               onMouseEnter={e => e.target.style.background='#fee2e2'}
