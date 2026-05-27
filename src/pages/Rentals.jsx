@@ -2,114 +2,166 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 const STATUS_LABEL = { draft:'טיוטה', confirmed:'מאושר', active:'פעיל', returned:'הוחזר', cancelled:'בוטל' }
-const STATUS_COLOR = { draft:'#7a9bb5', confirmed:'#f8b942', active:'#22c55e', returned:'#a78bfa', cancelled:'#ef4444' }
-
-const EMPTY_FORM = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', discount:'0', deposit_amount:'0', notes:'' }
+const STATUS_COLOR = { draft:'#94a3b8', confirmed:'#f59e0b', active:'#10b981', returned:'#8b5cf6', cancelled:'#ef4444' }
+const STATUS_BG    = { draft:'#f8fafc', confirmed:'#fffbeb', active:'#ecfdf5', returned:'#f5f3ff', cancelled:'#fef2f2' }
+const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', discount:'0', deposit_amount:'0', notes:'' }
 
 export default function Rentals() {
-  const [rentals, setRentals]     = useState([])
-  const [customers, setCustomers] = useState([])
-  const [equipment, setEquipment] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [modal, setModal]         = useState(false)
-  const [form, setForm]           = useState(EMPTY_FORM)
-  const [lines, setLines]         = useState([{ equipment_id:'', quantity:1 }])
-  const [saving, setSaving]       = useState(false)
-  const [filterStatus, setFilter] = useState('all')
+  const [rentals, setRentals]           = useState([])
+  const [customers, setCustomers]       = useState([])
+  const [equipment, setEquipment]       = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [modal, setModal]               = useState(false)
+  const [form, setForm]                 = useState(EMPTY_FORM)
+  const [lines, setLines]               = useState([{ equipment_id:'', quantity:1 }])
+  const [saving, setSaving]             = useState(false)
+  const [filterStatus, setFilter]       = useState('all')
+  const [availability, setAvailability] = useState({})
+  const [availLoading, setAvailLoading] = useState(false)
 
   const load = async () => {
-    const [{ data: r }, { data: c }, { data: e }] = await Promise.all([
+    const [{ data:r }, { data:c }, { data:e }] = await Promise.all([
       supabase.from('rentals').select('*, customers(full_name)').order('created_at', { ascending:false }),
       supabase.from('customers').select('id, full_name').order('full_name'),
-      supabase.from('equipment').select('id, name, daily_rate').eq('is_active', true).order('name'),
+      supabase.from('equipment').select('id, name, daily_rate, quantity_total').eq('is_active', true).order('name'),
     ])
     setRentals(r || [])
     setCustomers(c || [])
     setEquipment(e || [])
     setLoading(false)
   }
-
   useEffect(() => { load() }, [])
 
-  const addLine = () => setLines(p => [...p, { equipment_id:'', quantity:1 }])
-  const removeLine = i => setLines(p => p.filter((_, idx) => idx !== i))
-  const updateLine = (i, key, val) => setLines(p => p.map((l, idx) => idx === i ? { ...l, [key]: val } : l))
+  useEffect(() => {
+    if (!form.start_date || !form.end_date || !modal) return
+    const check = async () => {
+      setAvailLoading(true)
+      const results = {}
+      for (const eq of equipment) {
+        const { data, error } = await supabase.rpc('get_available_quantity', {
+          p_equipment_id: eq.id, p_start_date: form.start_date, p_end_date: form.end_date,
+        })
+        results[eq.id] = error ? eq.quantity_total : data
+      }
+      setAvailability(results)
+      setAvailLoading(false)
+    }
+    check()
+  }, [form.start_date, form.end_date, modal])
+
+  const addLine    = () => setLines(p => [...p, { equipment_id:'', quantity:1 }])
+  const removeLine = i  => setLines(p => p.filter((_,idx) => idx !== i))
+  const updateLine = (i,k,v) => setLines(p => p.map((l,idx) => idx===i ? {...l,[k]:v} : l))
+
+  const checkConflicts = () => lines.filter(l => l.equipment_id).reduce((arr, l) => {
+    const eq = equipment.find(e => e.id === l.equipment_id)
+    const av = availability[l.equipment_id]
+    if (av !== undefined && +l.quantity > av) arr.push(`❌ ${eq.name}: ביקשת ${l.quantity}, זמין רק ${av}`)
+    return arr
+  }, [])
 
   const calcTotal = () => {
     if (!form.start_date || !form.end_date) return 0
     const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
-    return lines.reduce((sum, l) => {
+    return lines.reduce((s,l) => {
       const eq = equipment.find(e => e.id === l.equipment_id)
-      return sum + (eq ? eq.daily_rate * +l.quantity * days : 0)
+      return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
     }, 0) - +form.discount
   }
 
   const save = async () => {
     if (!form.customer_id || !form.start_date || !form.end_date) return alert('נא למלא שדות חובה')
+    const conflicts = checkConflicts()
+    if (conflicts.length > 0) return alert('⚠️ אין מספיק ציוד זמין:\n\n' + conflicts.join('\n'))
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: rental, error } = await supabase.from('rentals').insert({
-      ...form, discount: +form.discount, deposit_amount: +form.deposit_amount, created_by: user.id
+    const { data:{ user } } = await supabase.auth.getUser()
+    const { data:rental, error } = await supabase.from('rentals').insert({
+      ...form, discount:+form.discount, deposit_amount:+form.deposit_amount, created_by:user.id
     }).select().single()
     if (error) { alert('שגיאה: ' + error.message); setSaving(false); return }
-
-    const validLines = lines.filter(l => l.equipment_id)
-    for (const l of validLines) {
+    for (const l of lines.filter(l => l.equipment_id)) {
       const eq = equipment.find(e => e.id === l.equipment_id)
-      await supabase.from('rental_items').insert({ rental_id: rental.id, equipment_id: l.equipment_id, quantity: +l.quantity, daily_rate: eq.daily_rate })
+      await supabase.from('rental_items').insert({ rental_id:rental.id, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
     }
     await load()
-    setModal(false)
-    setForm(EMPTY_FORM)
-    setLines([{ equipment_id:'', quantity:1 }])
-    setSaving(false)
+    setModal(false); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setSaving(false)
   }
 
   const updateStatus = async (id, status) => {
     await supabase.from('rentals').update({ status }).eq('id', id)
-    setRentals(p => p.map(r => r.id === id ? { ...r, status } : r))
+    setRentals(p => p.map(r => r.id===id ? {...r,status} : r))
   }
 
-  const filtered = rentals.filter(r => filterStatus === 'all' || r.status === filterStatus)
+  const filtered = rentals.filter(r => filterStatus==='all' || r.status===filterStatus)
 
-  if (loading) return <div style={{ color:'#f8b942' }}>⏳ טוען...</div>
+  if (loading) return (
+    <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
+      <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
+    </div>
+  )
 
   return (
     <div style={{ direction:'rtl' }}>
-      <div style={s.header}>
-        <h1 style={s.title}>השכרות</h1>
-        <button style={s.btn} onClick={() => { setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setModal(true) }}>+ השכרה חדשה</button>
+      <style>{`
+        @keyframes spin { to { transform:rotate(360deg) } }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+        .rent-row { transition: background 0.15s; }
+        .rent-row:hover { background: #f8fafc !important; }
+        .chip-btn { transition: all 0.15s; }
+        .chip-btn:hover { background: #eef2ff !important; color: #6366f1 !important; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
+        <div>
+          <h1 style={{ fontSize:26, fontWeight:800, color:'#0f172a', letterSpacing:'-0.5px' }}>השכרות</h1>
+          <p style={{ color:'#94a3b8', fontSize:13, marginTop:3 }}>{rentals.length} השכרות בסך הכל</p>
+        </div>
+        <button onClick={() => { setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setModal(true) }}
+          style={{ background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'10px 20px', borderRadius:12, cursor:'pointer', fontSize:14, boxShadow:'0 4px 12px rgba(99,102,241,0.25)', transition:'all 0.2s' }}
+          onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
+          onMouseLeave={e => e.currentTarget.style.transform='translateY(0)'}>
+          + השכרה חדשה
+        </button>
       </div>
 
-      {/* Filter */}
-      <div style={s.filters}>
+      {/* Filters */}
+      <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' }}>
         {['all', ...Object.keys(STATUS_LABEL)].map(st => (
-          <button key={st} onClick={() => setFilter(st)}
-            style={{ ...s.chip, ...(filterStatus === st ? s.chipActive : {}) }}>
-            {st === 'all' ? 'הכל' : STATUS_LABEL[st]}
+          <button key={st} className="chip-btn" onClick={() => setFilter(st)}
+            style={{ padding:'7px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
+              borderColor: filterStatus===st ? '#6366f1' : '#e2e8f0',
+              background:  filterStatus===st ? '#eef2ff' : '#fff',
+              color:       filterStatus===st ? '#6366f1' : '#64748b',
+              fontWeight:  filterStatus===st ? 700 : 400 }}>
+            {st==='all' ? 'הכל' : STATUS_LABEL[st]}
           </button>
         ))}
       </div>
 
       {/* Table */}
-      <div style={s.table}>
+      <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
         {filtered.length === 0
-          ? <p style={{ color:'#4a6080', padding:16 }}>אין השכרות</p>
-          : filtered.map(r => (
-            <div key={r.id} style={s.row}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700, fontSize:15 }}>{r.customers?.full_name || '—'}</div>
-                <div style={{ fontSize:12, color:'#4a6080', marginTop:2 }}>{r.start_date} → {r.end_date}</div>
-                {r.notes && <div style={{ fontSize:12, color:'#4a6080', marginTop:2 }}>{r.notes}</div>}
+          ? <div style={{ padding:'60px 0', textAlign:'center', color:'#94a3b8' }}>
+              <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
+              <div>אין השכרות</div>
+            </div>
+          : filtered.map((r, i) => (
+            <div key={r.id} className="rent-row"
+              style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom: i<filtered.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
+              <div style={{ display:'flex', gap:14, alignItems:'center' }}>
+                <div style={{ width:40, height:40, borderRadius:12, background:'#eef2ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>📋</div>
+                <div>
+                  <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
+                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{r.start_date} → {r.end_date}</div>
+                  {r.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{r.notes}</div>}
+                </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <select
-                  value={r.status}
-                  onChange={e => updateStatus(r.id, e.target.value)}
-                  style={{ background: STATUS_COLOR[r.status]+'22', color: STATUS_COLOR[r.status], border:'none', borderRadius:20, padding:'5px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-                  {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
+              <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
+                style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], border:`1px solid ${STATUS_COLOR[r.status]}33`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
+                {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
             </div>
           ))
         }
@@ -117,84 +169,129 @@ export default function Rentals() {
 
       {/* Modal */}
       {modal && (
-        <div style={s.overlay}>
-          <div style={s.modal}>
-            <h2 style={s.modalTitle}>השכרה חדשה</h2>
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
+          <div style={{ background:'#fff', borderRadius:20, padding:32, width:500, maxHeight:'90vh', overflowY:'auto', direction:'rtl', boxShadow:'0 24px 60px rgba(0,0,0,0.15)', animation:'fadeUp 0.25s ease' }}>
+            <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>📋 השכרה חדשה</h2>
 
-            <div style={s.field}>
-              <label style={s.label}>לקוח *</label>
-              <select style={s.minput} value={form.customer_id} onChange={e => setForm(p => ({ ...p, customer_id: e.target.value }))}>
+            {/* Customer */}
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>לקוח *</label>
+              <select style={inp} value={form.customer_id} onChange={e => setForm(p => ({...p,customer_id:e.target.value}))}>
                 <option value="">-- בחר לקוח --</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
               </select>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-              <div style={s.field}>
-                <label style={s.label}>מתאריך *</label>
-                <input style={s.minput} type="date" value={form.start_date} onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))} />
+            {/* Dates */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+              <div>
+                <label style={lbl}>מתאריך *</label>
+                <input style={inp} type="date" value={form.start_date} onChange={e => setForm(p => ({...p,start_date:e.target.value}))} />
               </div>
-              <div style={s.field}>
-                <label style={s.label}>עד תאריך *</label>
-                <input style={s.minput} type="date" value={form.end_date} onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))} />
+              <div>
+                <label style={lbl}>עד תאריך *</label>
+                <input style={inp} type="date" value={form.end_date} onChange={e => setForm(p => ({...p,end_date:e.target.value}))} />
               </div>
             </div>
 
-            <div style={s.field}>
-              <label style={s.label}>אופן איסוף</label>
-              <select style={s.minput} value={form.pickup_type} onChange={e => setForm(p => ({ ...p, pickup_type: e.target.value }))}>
+            {availLoading && (
+              <div style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px', fontSize:13, color:'#94a3b8', marginBottom:14, display:'flex', gap:8, alignItems:'center' }}>
+                <div style={{ width:14, height:14, border:'2px solid #e2e8f0', borderTop:'2px solid #6366f1', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+                בודק זמינות ציוד...
+              </div>
+            )}
+
+            {/* Pickup */}
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>אופן איסוף</label>
+              <select style={inp} value={form.pickup_type} onChange={e => setForm(p => ({...p,pickup_type:e.target.value}))}>
                 <option value="pickup">איסוף עצמי</option>
                 <option value="delivery">משלוח</option>
               </select>
             </div>
 
-            {form.pickup_type === 'delivery' && (
-              <div style={s.field}>
-                <label style={s.label}>כתובת למשלוח</label>
-                <input style={s.minput} type="text" value={form.delivery_address} onChange={e => setForm(p => ({ ...p, delivery_address: e.target.value }))} />
+            {form.pickup_type==='delivery' && (
+              <div style={{ marginBottom:14 }}>
+                <label style={lbl}>כתובת למשלוח</label>
+                <input style={inp} type="text" value={form.delivery_address} onChange={e => setForm(p => ({...p,delivery_address:e.target.value}))} />
               </div>
             )}
 
-            {/* Equipment lines */}
-            <div style={s.field}>
-              <label style={s.label}>פריטים</label>
-              {lines.map((l, i) => (
-                <div key={i} style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center' }}>
-                  <select style={{ ...s.minput, flex:2 }} value={l.equipment_id} onChange={e => updateLine(i, 'equipment_id', e.target.value)}>
-                    <option value="">-- בחר פריט --</option>
-                    {equipment.map(e => <option key={e.id} value={e.id}>{e.name} (₪{e.daily_rate}/יום)</option>)}
-                  </select>
-                  <input style={{ ...s.minput, flex:0.5 }} type="number" min="1" value={l.quantity} onChange={e => updateLine(i, 'quantity', e.target.value)} />
-                  {lines.length > 1 && <button style={s.iconBtn} onClick={() => removeLine(i)}>✕</button>}
-                </div>
-              ))}
-              <button style={s.btnGhost} onClick={addLine}>+ פריט נוסף</button>
+            {/* Lines */}
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>פריטים</label>
+              {lines.map((l,i) => {
+                const avail = availability[l.equipment_id]
+                const isOver = l.equipment_id && avail !== undefined && +l.quantity > avail
+                return (
+                  <div key={i} style={{ marginBottom:8 }}>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      <select style={{ ...inp, flex:2, borderColor: isOver ? '#ef4444' : '#e2e8f0' }}
+                        value={l.equipment_id} onChange={e => updateLine(i,'equipment_id',e.target.value)}>
+                        <option value="">-- בחר פריט --</option>
+                        {equipment.map(e => {
+                          const av = availability[e.id]
+                          return <option key={e.id} value={e.id}>{e.name} (₪{e.daily_rate}/יום{av!==undefined ? ` | זמין: ${av}` : ''})</option>
+                        })}
+                      </select>
+                      <input style={{ ...inp, width:70, flex:'none', borderColor: isOver ? '#ef4444' : '#e2e8f0' }}
+                        type="number" min="1" value={l.quantity} onChange={e => updateLine(i,'quantity',e.target.value)} />
+                      {lines.length>1 && (
+                        <button onClick={() => removeLine(i)}
+                          style={{ background:'#fef2f2', border:'none', color:'#ef4444', borderRadius:8, padding:'8px 10px', cursor:'pointer', fontSize:14, fontWeight:700 }}>✕</button>
+                      )}
+                    </div>
+                    {isOver && (
+                      <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'6px 12px', fontSize:12, color:'#ef4444', marginTop:4 }}>
+                        ⚠️ ביקשת {l.quantity} יחידות — זמינות רק {avail}
+                      </div>
+                    )}
+                    {!isOver && l.equipment_id && avail!==undefined && +l.quantity>0 && (
+                      <div style={{ background:'#ecfdf5', border:'1px solid #bbf7d0', borderRadius:8, padding:'6px 12px', fontSize:12, color:'#10b981', marginTop:4 }}>
+                        ✅ זמין — {avail} יחידות פנויות
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <button onClick={addLine}
+                style={{ background:'#f8fafc', border:'1px dashed #cbd5e1', color:'#64748b', borderRadius:10, padding:'8px 16px', cursor:'pointer', fontSize:13, width:'100%', marginTop:4 }}>
+                + הוסף פריט נוסף
+              </button>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-              <div style={s.field}>
-                <label style={s.label}>הנחה (₪)</label>
-                <input style={s.minput} type="number" value={form.discount} onChange={e => setForm(p => ({ ...p, discount: e.target.value }))} />
+            {/* Discount + Deposit */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+              <div>
+                <label style={lbl}>הנחה (₪)</label>
+                <input style={inp} type="number" value={form.discount} onChange={e => setForm(p => ({...p,discount:e.target.value}))} />
               </div>
-              <div style={s.field}>
-                <label style={s.label}>מקדמה (₪)</label>
-                <input style={s.minput} type="number" value={form.deposit_amount} onChange={e => setForm(p => ({ ...p, deposit_amount: e.target.value }))} />
+              <div>
+                <label style={lbl}>מקדמה (₪)</label>
+                <input style={inp} type="number" value={form.deposit_amount} onChange={e => setForm(p => ({...p,deposit_amount:e.target.value}))} />
               </div>
             </div>
 
-            <div style={s.field}>
-              <label style={s.label}>הערות</label>
-              <input style={s.minput} type="text" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
+            <div style={{ marginBottom:16 }}>
+              <label style={lbl}>הערות</label>
+              <input style={inp} type="text" value={form.notes} onChange={e => setForm(p => ({...p,notes:e.target.value}))} />
             </div>
 
-            <div style={{ ...s.field, background:'#0a0f1a', borderRadius:8, padding:12, textAlign:'center' }}>
-              <span style={{ color:'#4a6080', fontSize:13 }}>סה״כ לתשלום: </span>
-              <span style={{ color:'#f8b942', fontWeight:800, fontSize:20 }}>₪{calcTotal().toFixed(2)}</span>
+            {/* Total */}
+            <div style={{ background:'linear-gradient(135deg,#eef2ff,#f5f3ff)', borderRadius:12, padding:'14px 18px', textAlign:'center', marginBottom:20 }}>
+              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום</div>
+              <div style={{ fontSize:28, fontWeight:800, color:'#6366f1' }}>₪{calcTotal().toFixed(2)}</div>
             </div>
 
-            <div style={s.modalBtns}>
-              <button style={s.btn} onClick={save} disabled={saving}>{saving ? 'שומר...' : 'צור השכרה'}</button>
-              <button style={s.btnGhost} onClick={() => setModal(false)}>ביטול</button>
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={save} disabled={saving}
+                style={{ flex:1, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
+                {saving ? 'שומר...' : 'צור השכרה'}
+              </button>
+              <button onClick={() => setModal(false)}
+                style={{ flex:1, background:'#f8fafc', border:'1px solid #e2e8f0', color:'#64748b', fontWeight:600, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
+                ביטול
+              </button>
             </div>
           </div>
         </div>
@@ -203,22 +300,5 @@ export default function Rentals() {
   )
 }
 
-const s = {
-  header:    { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 },
-  title:     { margin:0, fontSize:26, fontWeight:800 },
-  filters:   { display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' },
-  chip:      { padding:'7px 14px', borderRadius:20, border:'1px solid #1e2d40', background:'transparent', color:'#7a9bb5', cursor:'pointer', fontSize:13 },
-  chipActive:{ background:'#f8b942', color:'#0a0f1a', fontWeight:700, borderColor:'#f8b942' },
-  table:     { background:'#111827', border:'1px solid #1e2d40', borderRadius:14, overflow:'hidden' },
-  row:       { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 20px', borderBottom:'1px solid #1a2535' },
-  btn:       { background:'linear-gradient(135deg,#f8b942,#f57c00)', border:'none', color:'#0a0f1a', fontWeight:700, padding:'10px 22px', borderRadius:10, cursor:'pointer', fontSize:14 },
-  btnGhost:  { background:'#1e2d40', border:'none', color:'#7a9bb5', fontWeight:600, padding:'10px 22px', borderRadius:10, cursor:'pointer', fontSize:14 },
-  overlay:   { position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 },
-  modal:     { background:'#111827', border:'1px solid #1e2d40', borderRadius:16, padding:32, width:480, maxHeight:'90vh', overflowY:'auto', direction:'rtl' },
-  modalTitle:{ margin:'0 0 20px', fontSize:18, fontWeight:800 },
-  field:     { marginBottom:12 },
-  label:     { display:'block', fontSize:13, color:'#7a9bb5', marginBottom:5 },
-  minput:    { width:'100%', background:'#0a0f1a', border:'1px solid #1e2d40', color:'#e8edf5', borderRadius:8, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box' },
-  modalBtns: { display:'flex', gap:10, marginTop:20 },
-  iconBtn:   { background:'transparent', border:'none', color:'#ef4444', cursor:'pointer', fontSize:16, fontWeight:700 },
-}
+const lbl = { display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:5 }
+const inp = { width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box' }
