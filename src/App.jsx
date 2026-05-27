@@ -6,6 +6,7 @@ import Inventory from './pages/Inventory'
 import Rentals from './pages/Rentals'
 import Customers from './pages/Customers'
 import Business from './pages/Business'
+import Calendar from './pages/Calendar'
 import Login from './pages/Login'
 import GlobalSearch from './GlobalSearch'
 
@@ -14,6 +15,7 @@ const NAV = [
   { path: '/inventory', label: 'מלאי',   icon: '📦' },
   { path: '/rentals',   label: 'השכרות', icon: '📋' },
   { path: '/customers', label: 'לקוחות', icon: '👤' },
+  { path: '/calendar',  label: 'לוח שנה',icon: '📅' },
   { path: '/business',  label: 'עסק',    icon: '💼' },
 ]
 
@@ -75,16 +77,16 @@ export default function App() {
                 style={({ isActive }) => ({
                   display:'flex', flexDirection:'column', alignItems:'center', gap:2,
                   color: isActive ? '#6366f1' : '#94a3b8',
-                  textDecoration:'none', fontSize:10, fontWeight: isActive ? 700 : 400,
-                  padding:'4px 8px', borderRadius:8, transition:'all 0.2s'
+                  textDecoration:'none', fontSize:9, fontWeight: isActive ? 700 : 400,
+                  padding:'4px 6px', borderRadius:8, transition:'all 0.2s'
                 })}>
-                <span style={{ fontSize:18 }}>{n.icon}</span>
+                <span style={{ fontSize:16 }}>{n.icon}</span>
                 {n.label}
               </NavLink>
             ))}
             <button onClick={() => supabase.auth.signOut()}
-              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'4px 8px' }}>
-              <span style={{ fontSize:18 }}>🚪</span>יציאה
+              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none', color:'#94a3b8', fontSize:9, cursor:'pointer', padding:'4px 6px' }}>
+              <span style={{ fontSize:16 }}>🚪</span>יציאה
             </button>
           </nav>
         ) : (
@@ -94,7 +96,6 @@ export default function App() {
               <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>השכרת ציוד אירועים</div>
             </div>
 
-            {/* חיפוש גלובלי */}
             <GlobalSearch />
 
             <nav style={{ display:'flex', flexDirection:'column', gap:2, flex:1 }}>
@@ -130,6 +131,7 @@ export default function App() {
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/rentals"   element={<Rentals />} />
               <Route path="/customers" element={<Customers />} />
+              <Route path="/calendar"  element={<Calendar />} />
               <Route path="/business"  element={<Business />} />
               <Route path="*"          element={<Navigate to="/" />} />
             </Routes>
