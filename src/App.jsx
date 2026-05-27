@@ -4,9 +4,8 @@ import { supabase } from './supabaseClient'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Rentals from './pages/Rentals'
-{ path: '/custimport Customers from './pages/Customers'
-import Business from './pages/Business'omers', label: 'לקוחות', icon: '👤' },
-
+import Customers from './pages/Customers'
+import Business from './pages/Business'
 import Login from './pages/Login'
 
 const NAV = [
@@ -14,7 +13,6 @@ const NAV = [
   { path: '/inventory', label: 'מלאי',   icon: '📦' },
   { path: '/rentals',   label: 'השכרות', icon: '📋' },
   { path: '/customers', label: 'לקוחות', icon: '👤' },
-  { path: '/business',  label: 'עסק',    icon: '💼' },
   { path: '/business',  label: 'עסק',    icon: '💼' },
 ]
 
@@ -63,6 +61,7 @@ export default function App() {
         .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.3); }
         .fade-in { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes spin { to { transform: rotate(360deg) } }
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -78,16 +77,15 @@ export default function App() {
                   display:'flex', flexDirection:'column', alignItems:'center', gap:2,
                   color: isActive ? '#6366f1' : '#94a3b8',
                   textDecoration:'none', fontSize:10, fontWeight: isActive ? 700 : 400,
-                  padding:'4px 12px', borderRadius:8,
-                  transition:'all 0.2s'
+                  padding:'4px 8px', borderRadius:8, transition:'all 0.2s'
                 })}>
-                <span style={{ fontSize:20 }}>{n.icon}</span>
+                <span style={{ fontSize:18 }}>{n.icon}</span>
                 {n.label}
               </NavLink>
             ))}
             <button onClick={() => supabase.auth.signOut()}
-              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'4px 12px' }}>
-              <span style={{ fontSize:20 }}>🚪</span>יציאה
+              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'4px 8px' }}>
+              <span style={{ fontSize:18 }}>🚪</span>יציאה
             </button>
           </nav>
         ) : (
