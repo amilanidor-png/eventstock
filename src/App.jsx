@@ -4,7 +4,9 @@ import { supabase } from './supabaseClient'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Rentals from './pages/Rentals'
-import Customers from './pages/Customers'
+{ path: '/custimport Customers from './pages/Customers'
+import Business from './pages/Business'omers', label: 'לקוחות', icon: '👤' },
+
 import Login from './pages/Login'
 
 const NAV = [
@@ -12,6 +14,8 @@ const NAV = [
   { path: '/inventory', label: 'מלאי',   icon: '📦' },
   { path: '/rentals',   label: 'השכרות', icon: '📋' },
   { path: '/customers', label: 'לקוחות', icon: '👤' },
+  { path: '/business',  label: 'עסק',    icon: '💼' },
+  { path: '/business',  label: 'עסק',    icon: '💼' },
 ]
 
 export default function App() {
@@ -124,6 +128,7 @@ export default function App() {
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/rentals"   element={<Rentals />} />
               <Route path="/customers" element={<Customers />} />
+              <Route path="/business"  element={<Business />} />
               <Route path="*"          element={<Navigate to="/" />} />
             </Routes>
           </div>
