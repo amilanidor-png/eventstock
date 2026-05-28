@@ -20,7 +20,7 @@ export default function Dashboard() {
   const [returning, setReturning] = useState([])
   const [upcoming, setUpcoming]   = useState([])
   const [popular, setPopular]     = useState([])
-  const [loading, setLoading]     = useState(true)
+  const [loading, setLoading]     = useState(false)
 
   useEffect(() => {
     const load = async () => {
