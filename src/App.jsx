@@ -117,32 +117,33 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const fetchProfile = async (userId) => {
-    try {
-      const { data: prof, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-      if (!error && prof) setProfile(prof)
-    } catch (err) {
-      console.error('PROFILE ERROR:', err)
+  const fetchProfile = async (userId, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const { data: prof, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single()
+        if (!error && prof) {
+          setProfile(prof)
+          return
+        }
+      } catch (err) {
+        console.error('Profile fetch attempt', i + 1, 'failed:', err)
+      }
+      await new Promise(r => setTimeout(r, 500))
     }
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 4000)
-
     supabase.auth.getSession()
       .then(async ({ data }) => {
         setSession(data.session)
         if (data.session) await fetchProfile(data.session.user.id)
       })
       .catch(console.error)
-      .finally(() => {
-        clearTimeout(timer)
-        setLoading(false)
-      })
+      .finally(() => setLoading(false))
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_e, s) => {
       setSession(s)
@@ -150,10 +151,7 @@ export default function App() {
       else setProfile(null)
     })
 
-    return () => {
-      clearTimeout(timer)
-      listener.subscription.unsubscribe()
-    }
+    return () => listener.subscription.unsubscribe()
   }, [])
 
   if (loading) return (
