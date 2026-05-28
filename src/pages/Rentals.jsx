@@ -12,6 +12,7 @@ export default function Rentals() {
   const [equipment, setEquipment]       = useState([])
   const [loading, setLoading]           = useState(true)
   const [modal, setModal]               = useState(false)
+  const [editId, setEditId]             = useState(null)
   const [form, setForm]                 = useState(EMPTY_FORM)
   const [lines, setLines]               = useState([{ equipment_id:'', quantity:1 }])
   const [saving, setSaving]             = useState(false)
@@ -39,7 +40,10 @@ export default function Rentals() {
       const results = {}
       for (const eq of equipment) {
         const { data, error } = await supabase.rpc('get_available_quantity', {
-          p_equipment_id: eq.id, p_start_date: form.start_date, p_end_date: form.end_date,
+          p_equipment_id:      eq.id,
+          p_start_date:        form.start_date,
+          p_end_date:          form.end_date,
+          p_exclude_rental_id: editId || null,
         })
         results[eq.id] = error ? eq.quantity_total : data
       }
@@ -48,6 +52,36 @@ export default function Rentals() {
     }
     check()
   }, [form.start_date, form.end_date, modal])
+
+  const openNew = () => {
+    setEditId(null)
+    setForm(EMPTY_FORM)
+    setLines([{ equipment_id:'', quantity:1 }])
+    setAvailability({})
+    setModal(true)
+  }
+
+  const openEdit = async (r) => {
+    setEditId(r.id)
+    setForm({
+      customer_id:      r.customer_id,
+      start_date:       r.start_date,
+      end_date:         r.end_date,
+      pickup_type:      r.pickup_type,
+      delivery_address: r.delivery_address || '',
+      delivery_price:   String(r.delivery_price || 0),
+      discount:         String(r.discount || 0),
+      deposit_amount:   String(r.deposit_amount || 0),
+      notes:            r.notes || '',
+    })
+    const { data: items } = await supabase
+      .from('rental_items')
+      .select('equipment_id, quantity')
+      .eq('rental_id', r.id)
+    setLines(items?.length ? items : [{ equipment_id:'', quantity:1 }])
+    setAvailability({})
+    setModal(true)
+  }
 
   const addLine    = () => setLines(p => [...p, { equipment_id:'', quantity:1 }])
   const removeLine = i  => setLines(p => p.filter((_,idx) => idx !== i))
@@ -60,55 +94,62 @@ export default function Rentals() {
     return arr
   }, [])
 
-  const calcTotal = () => {
-    const calcVAT = () => {
-  if (!form.start_date || !form.end_date) return 0
-  const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
-  const itemsTotal = lines.reduce((s,l) => {
-    const eq = equipment.find(e => e.id === l.equipment_id)
-    return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
-  }, 0)
-  const subtotal = itemsTotal + +form.delivery_price - +form.discount
-  return subtotal * 0.18
-}
-
-const calcTotal = () => {
-  if (!form.start_date || !form.end_date) return 0
-  const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
-  const itemsTotal = lines.reduce((s,l) => {
-    const eq = equipment.find(e => e.id === l.equipment_id)
-    return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
-  }, 0)
-  const subtotal = itemsTotal + +form.delivery_price - +form.discount
-  return subtotal * 1.18
-}
+  const calcSubtotal = () => {
+    if (!form.start_date || !form.end_date) return 0
+    const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
+    return lines.reduce((s,l) => {
+      const eq = equipment.find(e => e.id === l.equipment_id)
+      return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
+    }, 0) + +form.delivery_price - +form.discount
   }
+  const calcVAT   = () => calcSubtotal() * 0.18
+  const calcTotal = () => calcSubtotal() * 1.18
 
   const save = async () => {
     if (!form.customer_id || !form.start_date || !form.end_date) return alert('נא למלא שדות חובה')
     const conflicts = checkConflicts()
     if (conflicts.length > 0) return alert('⚠️ אין מספיק ציוד זמין:\n\n' + conflicts.join('\n'))
     setSaving(true)
-    const { data:{ user } } = await supabase.auth.getUser()
-    const { data:rental, error } = await supabase.from('rentals').insert({
+
+    const payload = {
       ...form,
       discount:       +form.discount,
       deposit_amount: +form.deposit_amount,
       delivery_price: +form.delivery_price,
-      created_by:     user.id
-    }).select().single()
-    if (error) { alert('שגיאה: ' + error.message); setSaving(false); return }
-    for (const l of lines.filter(l => l.equipment_id)) {
-      const eq = equipment.find(e => e.id === l.equipment_id)
-      await supabase.from('rental_items').insert({ rental_id:rental.id, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
     }
+
+    if (editId) {
+      // עדכון הזמנה קיימת
+      await supabase.from('rentals').update(payload).eq('id', editId)
+      await supabase.from('rental_items').delete().eq('rental_id', editId)
+      for (const l of lines.filter(l => l.equipment_id)) {
+        const eq = equipment.find(e => e.id === l.equipment_id)
+        await supabase.from('rental_items').insert({ rental_id:editId, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
+      }
+    } else {
+      // הזמנה חדשה
+      const { data:{ user } } = await supabase.auth.getUser()
+      const { data:rental, error } = await supabase.from('rentals').insert({ ...payload, created_by:user.id }).select().single()
+      if (error) { alert('שגיאה: ' + error.message); setSaving(false); return }
+      for (const l of lines.filter(l => l.equipment_id)) {
+        const eq = equipment.find(e => e.id === l.equipment_id)
+        await supabase.from('rental_items').insert({ rental_id:rental.id, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
+      }
+    }
+
     await load()
-    setModal(false); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setSaving(false)
+    setModal(false); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setEditId(null); setSaving(false)
   }
 
   const updateStatus = async (id, status) => {
     await supabase.from('rentals').update({ status }).eq('id', id)
     setRentals(p => p.map(r => r.id===id ? {...r,status} : r))
+  }
+
+  const del = async (id) => {
+    if (!confirm('למחוק השכרה זו?')) return
+    await supabase.from('rentals').delete().eq('id', id)
+    setRentals(p => p.filter(r => r.id !== id))
   }
 
   const filtered = rentals.filter(r => filterStatus==='all' || r.status===filterStatus)
@@ -129,6 +170,8 @@ const calcTotal = () => {
         .rent-row:hover { background: #f8fafc !important; }
         .chip-btn { transition: all 0.15s; }
         .chip-btn:hover { background: #eef2ff !important; color: #6366f1 !important; }
+        .icon-btn { transition: all 0.15s; opacity:0.5; }
+        .icon-btn:hover { opacity:1; transform:scale(1.1); }
       `}</style>
 
       {/* Header */}
@@ -137,7 +180,7 @@ const calcTotal = () => {
           <h1 style={{ fontSize:26, fontWeight:800, color:'#0f172a', letterSpacing:'-0.5px' }}>השכרות</h1>
           <p style={{ color:'#94a3b8', fontSize:13, marginTop:3 }}>{rentals.length} השכרות בסך הכל</p>
         </div>
-        <button onClick={() => { setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setModal(true) }}
+        <button onClick={openNew}
           style={{ background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'10px 20px', borderRadius:12, cursor:'pointer', fontSize:14, boxShadow:'0 4px 12px rgba(99,102,241,0.25)', transition:'all 0.2s' }}
           onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
           onMouseLeave={e => e.currentTarget.style.transform='translateY(0)'}>
@@ -169,7 +212,7 @@ const calcTotal = () => {
           : filtered.map((r, i) => (
             <div key={r.id} className="rent-row"
               style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom: i<filtered.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
-              <div style={{ display:'flex', gap:14, alignItems:'center' }}>
+              <div style={{ display:'flex', gap:14, alignItems:'center', flex:1 }}>
                 <div style={{ width:40, height:40, borderRadius:12, background:'#eef2ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
                   {r.pickup_type === 'delivery' ? '🚚' : '📋'}
                 </div>
@@ -184,10 +227,16 @@ const calcTotal = () => {
                   {r.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{r.notes}</div>}
                 </div>
               </div>
-              <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
-                style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], border:`1px solid ${STATUS_COLOR[r.status]}33`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
-                {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
+                  style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], border:`1px solid ${STATUS_COLOR[r.status]}33`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
+                  {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <button className="icon-btn" onClick={() => openEdit(r)}
+                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>✏️</button>
+                <button className="icon-btn" onClick={() => del(r.id)}
+                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>🗑️</button>
+              </div>
             </div>
           ))
         }
@@ -197,7 +246,9 @@ const calcTotal = () => {
       {modal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
           <div style={{ background:'#fff', borderRadius:20, padding:32, width:500, maxHeight:'90vh', overflowY:'auto', direction:'rtl', boxShadow:'0 24px 60px rgba(0,0,0,0.15)', animation:'fadeUp 0.25s ease' }}>
-            <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>📋 השכרה חדשה</h2>
+            <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>
+              {editId ? '✏️ עריכת השכרה' : '📋 השכרה חדשה'}
+            </h2>
 
             {/* Customer */}
             <div style={{ marginBottom:14 }}>
@@ -236,7 +287,6 @@ const calcTotal = () => {
               </select>
             </div>
 
-            {/* שדות משלוח */}
             {form.pickup_type === 'delivery' && (
               <div style={{ background:'#f8fafc', borderRadius:12, padding:14, marginBottom:14, border:'1px solid #e2e8f0' }}>
                 <div style={{ marginBottom:10 }}>
@@ -247,9 +297,7 @@ const calcTotal = () => {
                 <div>
                   <label style={lbl}>🚚 מחיר הובלה (₪)</label>
                   <input style={{ ...inp, borderColor:'#6366f1' }} type="number" placeholder="0" value={form.delivery_price}
-                    onChange={e => setForm(p => ({...p,delivery_price:e.target.value}))}
-                    onFocus={e => e.target.style.borderColor='#6366f1'}
-                    onBlur={e => e.target.style.borderColor='#6366f1'} />
+                    onChange={e => setForm(p => ({...p,delivery_price:e.target.value}))} />
                 </div>
               </div>
             )}
@@ -317,7 +365,7 @@ const calcTotal = () => {
             {/* Total */}
             <div style={{ background:'linear-gradient(135deg,#eef2ff,#f5f3ff)', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
               <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8, textAlign:'center' }}>פירוט עלויות</div>
-              <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:10 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:10 }}>
                 {form.pickup_type === 'delivery' && +form.delivery_price > 0 && (
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
                     <span>🚚 הובלה</span>
@@ -331,12 +379,12 @@ const calcTotal = () => {
                   </div>
                 )}
                 <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#f59e0b' }}>
-  <span>🧾 מע"מ 18%</span>
-  <span>₪{calcVAT().toFixed(2)}</span>
-</div>
+                  <span>🧾 מע"מ 18%</span>
+                  <span>₪{calcVAT().toFixed(2)}</span>
+                </div>
               </div>
               <div style={{ textAlign:'center', borderTop:'1px solid #c7d2fe', paddingTop:10 }}>
-                <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום</div>
+                <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום כולל מע"מ</div>
                 <div style={{ fontSize:28, fontWeight:800, color:'#6366f1' }}>₪{calcTotal().toFixed(2)}</div>
               </div>
             </div>
@@ -344,9 +392,9 @@ const calcTotal = () => {
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={save} disabled={saving}
                 style={{ flex:1, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
-                {saving ? 'שומר...' : 'צור השכרה'}
+                {saving ? 'שומר...' : editId ? 'עדכן השכרה' : 'צור השכרה'}
               </button>
-              <button onClick={() => setModal(false)}
+              <button onClick={() => { setModal(false); setEditId(null) }}
                 style={{ flex:1, background:'#f8fafc', border:'1px solid #e2e8f0', color:'#64748b', fontWeight:600, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
                 ביטול
               </button>
