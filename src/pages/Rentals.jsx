@@ -144,7 +144,27 @@ export default function Rentals() {
     setRentals(p => p.map(r => r.id===id ? {...r,status} : r))
   }
 
-  const del = async (id) => {
+  const shareWhatsApp = (r) => {
+  const customer = r.customers?.full_name || 'לקוח'
+  const days = Math.max(1, Math.ceil((new Date(r.end_date) - new Date(r.start_date)) / 86400000) + 1)
+  const msg = `שלום ${customer} 👋
+
+*אוורסט - השכרת ציוד אירועים*
+————————————————
+📅 *תאריכים:* ${r.start_date} עד ${r.end_date} (${days} ימים)
+${r.pickup_type === 'delivery' ? `🚚 *משלוח לכתובת:* ${r.delivery_address || '—'}` : '📦 *איסוף עצמי*'}
+${r.delivery_price > 0 ? `🚚 *עלות הובלה:* ₪${r.delivery_price}` : ''}
+${r.assembly_price > 0 ? `🔨 *הרכבה ופירוק:* ₪${r.assembly_price}` : ''}
+${r.discount > 0 ? `🎁 *הנחה:* ₪${r.discount}` : ''}
+${r.notes ? `📝 *הערות:* ${r.notes}` : ''}
+————————————————
+תודה שבחרת באוורסט! 🏔️`
+
+  const url = `https://wa.me/?text=${encodeURIComponent(msg)}`
+  window.open(url, '_blank')
+}
+
+const del = async (id) => {
     if (!confirm('למחוק השכרה זו?')) return
     await supabase.from('rentals').delete().eq('id', id)
     setRentals(p => p.filter(r => r.id !== id))
@@ -229,6 +249,9 @@ export default function Rentals() {
                   style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], border:`1px solid ${STATUS_COLOR[r.status]}33`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
                   {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
+                <button className="icon-btn" onClick={() => shareWhatsApp(r)}
+  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}
+  title="שתף ב-WhatsApp">📱</button>
                 <button className="icon-btn" onClick={() => openEdit(r)}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>✏️</button>
                 <button className="icon-btn" onClick={() => del(r.id)}
