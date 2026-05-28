@@ -5,12 +5,20 @@ export default function Dashboard() {
   const [stats, setStats]         = useState({ customers:0, equipment:0, rentals:0, active:0 })
   const [rentals, setRentals]     = useState([])
   const [returning, setReturning] = useState([])
+  const [upcoming, setUpcoming]   = useState([])
   const [popular, setPopular]     = useState([])
   const [loading, setLoading]     = useState(true)
 
   useEffect(() => {
     const load = async () => {
-      const today = new Date().toISOString().slice(0,10)
+      const today    = new Date()
+      const todayStr = today.toISOString().slice(0,10)
+
+      // מחר ומחרתיים
+      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1)
+      const dayAfter  = new Date(today); dayAfter.setDate(dayAfter.getDate()+2)
+      const tomorrowStr  = tomorrow.toISOString().slice(0,10)
+      const dayAfterStr  = dayAfter.toISOString().slice(0,10)
 
       const [c, e, r] = await Promise.all([
         supabase.from('customers').select('id', { count:'exact', head:true }),
@@ -24,20 +32,26 @@ export default function Dashboard() {
         .select('id, status, start_date, end_date, customers(full_name)')
         .order('created_at', { ascending:false }).limit(5)
 
+      // מחזירים היום
       const { data: ret } = await supabase.from('rentals')
         .select('id, status, start_date, end_date, customers(full_name)')
-        .eq('end_date', today).in('status', ['active','confirmed'])
+        .eq('end_date', todayStr).in('status', ['active','confirmed'])
 
-      // דוח ציוד פופולרי
+      // מתחילים בקרוב (מחר ומחרתיים)
+      const { data: upc } = await supabase.from('rentals')
+        .select('id, status, start_date, end_date, customers(full_name), pickup_type')
+        .in('start_date', [tomorrowStr, dayAfterStr])
+        .in('status', ['confirmed','draft'])
+
+      // ציוד פופולרי
       const { data: popData } = await supabase
         .from('rental_items')
         .select('equipment_id, quantity, equipment(name, image_url, equipment_categories(icon))')
 
-      // ריכוז לפי פריט
       const popMap = {}
       ;(popData || []).forEach(item => {
         const id = item.equipment_id
-        if (!popMap[id]) popMap[id] = { id, name: item.equipment?.name, image_url: item.equipment?.image_url, icon: item.equipment?.equipment_categories?.icon || '📦', count: 0, qty: 0 }
+        if (!popMap[id]) popMap[id] = { id, name:item.equipment?.name, image_url:item.equipment?.image_url, icon:item.equipment?.equipment_categories?.icon||'📦', count:0, qty:0 }
         popMap[id].count += 1
         popMap[id].qty   += +item.quantity
       })
@@ -46,6 +60,7 @@ export default function Dashboard() {
       setStats({ customers:c.count||0, equipment:e.count||0, rentals:r.count||0, active:active||0 })
       setRentals(recent || [])
       setReturning(ret || [])
+      setUpcoming(upc || [])
       setPopular(sorted)
       setLoading(false)
     }
@@ -63,6 +78,11 @@ export default function Dashboard() {
     { label:'השכרות פעילות', value:stats.active,    icon:'🔑', color:'#10b981', bg:'#ecfdf5' },
   ]
 
+  const shareReminder = (r) => {
+    const msg = `שלום ${r.customers?.full_name} 👋\n\n*תזכורת מאוורסט* 🏔️\nהאירוע שלך מתחיל *מחר* — ${r.start_date}\n${r.pickup_type === 'delivery' ? '🚚 נדאג למשלוח' : '📦 אנא הגע לאיסוף עצמי'}\n\nלשאלות — דברו איתנו!`
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
   if (loading) return (
     <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
       <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
@@ -74,7 +94,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ direction:'rtl' }}>
-      <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
+      <style>{`@keyframes spin { to { transform:rotate(360deg) } } @keyframes fadeUp { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }`}</style>
 
       {/* Header */}
       <div style={{ marginBottom:24 }}>
@@ -84,9 +104,9 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* התראה */}
+      {/* התראה — מחזירים היום */}
       {returning.length > 0 && (
-        <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:14, padding:'16px 20px', marginBottom:24 }}>
+        <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:14, padding:'16px 20px', marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
             <span style={{ fontSize:20 }}>⚠️</span>
             <span style={{ fontWeight:700, fontSize:15, color:'#92400e' }}>
@@ -110,6 +130,38 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* תזכורות — מתחילים בקרוב */}
+      {upcoming.length > 0 && (
+        <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:14, padding:'16px 20px', marginBottom:16 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+            <span style={{ fontSize:20 }}>📅</span>
+            <span style={{ fontWeight:700, fontSize:15, color:'#166534' }}>
+              {upcoming.length} אירוע{upcoming.length > 1 ? 'ים' : ''} מתחיל{upcoming.length > 1 ? 'ים' : ''} בקרוב
+            </span>
+          </div>
+          {upcoming.map(r => {
+            const isTomorrow = r.start_date === new Date(Date.now()+86400000).toISOString().slice(0,10)
+            return (
+              <div key={r.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'#fff', borderRadius:10, padding:'10px 14px', marginBottom:6 }}>
+                <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                  <span style={{ fontSize:18 }}>{r.pickup_type === 'delivery' ? '🚚' : '📦'}</span>
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name}</div>
+                    <div style={{ fontSize:12, color:'#94a3b8' }}>
+                      {isTomorrow ? '⭐ מחר' : 'מחרתיים'} — {r.start_date}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => shareReminder(r)}
+                  style={{ background:'#25d366', border:'none', color:'#fff', borderRadius:10, padding:'6px 14px', cursor:'pointer', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', gap:6 }}>
+                  📱 שלח תזכורת
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px,1fr))', gap:16, marginBottom:28 }}>
         {STATS.map((s, i) => (
@@ -123,7 +175,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginBottom:20 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
         {/* ציוד פופולרי */}
         <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
           <div style={{ padding:'18px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8 }}>
