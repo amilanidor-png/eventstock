@@ -8,16 +8,18 @@ import Customers from './pages/Customers'
 import Business from './pages/Business'
 import Calendar from './pages/Calendar'
 import Settings from './pages/Settings'
+import Payments from './pages/Payments'
 import Login from './pages/Login'
 import GlobalSearch from './GlobalSearch'
 
 const NAV = [
-  { path: '/',          label: 'בקרה',    icon: '📊' },
+  { path: '/',          label: 'עסק',     icon: '💼' },
+  { path: '/dashboard', label: 'בקרה',    icon: '📊' },
   { path: '/inventory', label: 'מלאי',    icon: '📦' },
   { path: '/rentals',   label: 'השכרות',  icon: '📋' },
+  { path: '/payments',  label: 'תשלומים', icon: '💳' },
   { path: '/customers', label: 'לקוחות',  icon: '👤' },
   { path: '/calendar',  label: 'לוח שנה', icon: '📅' },
-  { path: '/business',  label: 'עסק',     icon: '💼' },
   { path: '/settings',  label: 'הגדרות',  icon: '⚙️' },
 ]
 
@@ -60,8 +62,6 @@ export default function App() {
         body { background: #f8f9fb; }
         .nav-link { transition: all 0.2s ease; }
         .nav-link:hover { background: #f1f5f9 !important; color: #1e293b !important; }
-        .card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
-        .card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important; transform: translateY(-1px); }
         .fade-in { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
@@ -74,26 +74,18 @@ export default function App() {
 
         {mobile ? (
           <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-around', padding:'6px 0 8px', zIndex:100, boxShadow:'0 -4px 20px rgba(0,0,0,0.06)' }}>
-            {NAV.slice(0,6).map(n => (
+            {NAV.slice(0,7).map(n => (
               <NavLink key={n.path} to={n.path} end={n.path === '/'}
                 style={({ isActive }) => ({
                   display:'flex', flexDirection:'column', alignItems:'center', gap:2,
                   color: isActive ? '#6366f1' : '#94a3b8',
                   textDecoration:'none', fontSize:9, fontWeight: isActive ? 700 : 400,
-                  padding:'4px 6px', borderRadius:8, transition:'all 0.2s'
+                  padding:'4px 4px', borderRadius:8, transition:'all 0.2s'
                 })}>
                 <span style={{ fontSize:16 }}>{n.icon}</span>
                 {n.label}
               </NavLink>
             ))}
-            <NavLink to="/settings" style={({ isActive }) => ({
-              display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-              color: isActive ? '#6366f1' : '#94a3b8',
-              textDecoration:'none', fontSize:9, fontWeight: isActive ? 700 : 400,
-              padding:'4px 6px', borderRadius:8
-            })}>
-              <span style={{ fontSize:16 }}>⚙️</span>הגדרות
-            </NavLink>
           </nav>
         ) : (
           <aside style={{ width:230, background:'#fff', borderLeft:'1px solid #e2e8f0', display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:'2px 0 12px rgba(0,0,0,0.04)' }}>
@@ -133,12 +125,13 @@ export default function App() {
         <main style={{ flex:1, overflowY:'auto', padding: mobile ? '20px 16px 80px' : '32px 36px' }}>
           <div className="fade-in">
             <Routes>
-              <Route path="/"          element={<Dashboard />} />
+              <Route path="/"          element={<Business />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/rentals"   element={<Rentals />} />
+              <Route path="/payments"  element={<Payments />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/calendar"  element={<Calendar />} />
-              <Route path="/business"  element={<Business />} />
               <Route path="/settings"  element={<Settings />} />
               <Route path="*"          element={<Navigate to="/" />} />
             </Routes>
