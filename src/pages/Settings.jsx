@@ -2,20 +2,36 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 const COLORS = ['#6366f1','#8b5cf6','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6','#3b82f6','#94a3b8','#f97316']
-const ICONS_EQ  = ['📦','🔊','💡','⛺','🪑','🎛️','🎤','📽️','🎪','🔧','🚗','⚡','🎭','🎬']
-const ICONS_EXP = ['💰','🏠','🚗','🔧','👷','📣','💡','📦','🍽️','✈️','📱','💻','🏥','📚']
+
+const ICONS_EQ = [
+  '📦','🔊','💡','⛺','🪑','🎛️','🎤','📽️','🎪','🔧',
+  '🎵','🎶','🎸','🥁','🎹','🎺','🎻','🎧','📻','🔌',
+  '🔋','💻','📷','🎥','📹','🎞️','🖥️','📺','📡','🔦',
+  '🕯️','🪔','🏮','🎆','🎇','✨','🌟','💫','🎠','🎡',
+  '🎢','🎨','🖼️','🎀','🎁','🎊','🎉','🪅','🪩','🍽️',
+  '🥂','🍾','🧁','🎂','🛋️','🪞','⛱️','🌂','🏕️','📢',
+  '📣','🎭','🎬','🚗','⚡','🪤','🧲','🔈',
+]
+
+const ICONS_EXP = [
+  '💰','🏠','🚗','🔧','👷','📣','💡','📦','🍽️','✈️',
+  '📱','💻','🏥','📚','💳','🏦','📊','🧾','🪙','💵',
+  '💴','💶','💷','🤝','📋','📝','🖨️','⛽','🅿️','🚚',
+  '🛒','🧹','🧺','🪣','🔑','🏢','🏪','🏗️','⚙️','🛠️',
+  '🪚','🔩','📐','📏','🎪','🎤','🎵','🎶','🎸','🥁',
+]
 
 const EMPTY_EQ  = { name:'', icon:'📦' }
 const EMPTY_EXP = { name:'', icon:'💰', color:'#6366f1' }
 
 export default function Settings() {
-  const [tab, setTab]               = useState('equipment')
-  const [eqCats, setEqCats]         = useState([])
-  const [expCats, setExpCats]       = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [modal, setModal]           = useState(false)
-  const [form, setForm]             = useState(EMPTY_EQ)
-  const [saving, setSaving]         = useState(false)
+  const [tab, setTab]         = useState('equipment')
+  const [eqCats, setEqCats]   = useState([])
+  const [expCats, setExpCats] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [modal, setModal]     = useState(false)
+  const [form, setForm]       = useState(EMPTY_EQ)
+  const [saving, setSaving]   = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -27,28 +43,17 @@ export default function Settings() {
     setExpCats(exp || [])
     setLoading(false)
   }
-
   useEffect(() => { load() }, [])
 
-  const openAdd = () => {
-    setForm(tab === 'equipment' ? EMPTY_EQ : EMPTY_EXP)
-    setModal(true)
-  }
-
-  const openEdit = (cat) => {
-    setForm(cat)
-    setModal(true)
-  }
+  const openAdd  = () => { setForm(tab === 'equipment' ? EMPTY_EQ : EMPTY_EXP); setModal(true) }
+  const openEdit = (cat) => { setForm(cat); setModal(true) }
 
   const save = async () => {
     if (!form.name.trim()) return alert('נא להזין שם קטגוריה')
     setSaving(true)
     const table = tab === 'equipment' ? 'equipment_categories' : 'expense_categories'
-    if (form.id) {
-      await supabase.from(table).update(form).eq('id', form.id)
-    } else {
-      await supabase.from(table).insert(form)
-    }
+    if (form.id) await supabase.from(table).update(form).eq('id', form.id)
+    else         await supabase.from(table).insert(form)
     await load()
     setModal(false)
     setForm(tab === 'equipment' ? EMPTY_EQ : EMPTY_EXP)
@@ -62,19 +67,21 @@ export default function Settings() {
     await load()
   }
 
-  const cats = tab === 'equipment' ? eqCats : expCats
+  const cats  = tab === 'equipment' ? eqCats : expCats
   const icons = tab === 'equipment' ? ICONS_EQ : ICONS_EXP
 
   return (
     <div style={{ direction:'rtl' }}>
       <style>{`
+        @keyframes spin { to { transform:rotate(360deg) } }
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
         .cat-row { transition: background 0.15s; }
         .cat-row:hover { background: #f8fafc !important; }
         .icon-btn { transition: all 0.15s; opacity:0.4; }
         .icon-btn:hover { opacity:1; transform:scale(1.1); }
-        .icon-pick { transition: all 0.15s; cursor:pointer; border-radius:8px; padding:4px; }
-        .icon-pick:hover { background: #eef2ff; transform:scale(1.1); }
+        .icon-pick { transition: all 0.15s; cursor:pointer; border-radius:8px; padding:4px; font-size:22px; }
+        .icon-pick:hover { background: #eef2ff; transform:scale(1.15); }
+        .icon-pick.selected { background: #eef2ff; outline: 2px solid #6366f1; }
       `}</style>
 
       {/* Header */}
@@ -94,8 +101,8 @@ export default function Settings() {
       {/* Tabs */}
       <div style={{ display:'flex', gap:8, marginBottom:24 }}>
         {[
-          { key:'equipment', label:'קטגוריות ציוד',    icon:'📦' },
-          { key:'expense',   label:'קטגוריות הוצאות',  icon:'💸' },
+          { key:'equipment', label:'קטגוריות ציוד',   icon:'📦' },
+          { key:'expense',   label:'קטגוריות הוצאות', icon:'💸' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding:'10px 20px', borderRadius:12, border:'1px solid', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', gap:8, transition:'all 0.15s',
@@ -111,7 +118,6 @@ export default function Settings() {
       {loading ? (
         <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
           <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-          <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
         </div>
       ) : (
         <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
@@ -130,12 +136,9 @@ export default function Settings() {
           ) : cats.map((cat, i) => (
             <div key={cat.id} className="cat-row"
               style={{ display:'flex', alignItems:'center', padding:'14px 24px', borderBottom: i<cats.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.04}s both` }}>
-
-              {/* אייקון + צבע */}
               <div style={{ width:40, height:40, borderRadius:12, background: cat.color ? `${cat.color}18` : '#eef2ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, marginLeft:14, flexShrink:0 }}>
                 {cat.icon}
               </div>
-
               <div style={{ flex:1 }}>
                 <div style={{ fontWeight:600, fontSize:15, color:'#1e293b' }}>{cat.name}</div>
                 {cat.color && (
@@ -145,7 +148,6 @@ export default function Settings() {
                   </div>
                 )}
               </div>
-
               <div style={{ display:'flex', gap:6 }}>
                 <button className="icon-btn" onClick={() => openEdit(cat)}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:6 }}>✏️</button>
@@ -160,7 +162,7 @@ export default function Settings() {
       {/* Modal */}
       {modal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
-          <div style={{ background:'#fff', borderRadius:20, padding:32, width:420, direction:'rtl', boxShadow:'0 24px 60px rgba(0,0,0,0.15)', animation:'fadeUp 0.25s ease' }}>
+          <div style={{ background:'#fff', borderRadius:20, padding:32, width:460, maxHeight:'90vh', overflowY:'auto', direction:'rtl', boxShadow:'0 24px 60px rgba(0,0,0,0.15)', animation:'fadeUp 0.25s ease' }}>
             <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>
               {form.id ? '✏️ עריכת קטגוריה' : '➕ קטגוריה חדשה'}
             </h2>
@@ -168,7 +170,7 @@ export default function Settings() {
             {/* שם */}
             <div style={{ marginBottom:16 }}>
               <label style={lbl}>שם הקטגוריה *</label>
-              <input style={inp} type="text" placeholder="לדוגמה: ריהוט" value={form.name}
+              <input style={inp} type="text" placeholder="לדוגמה: תאורת במה" value={form.name}
                 onChange={e => setForm(p => ({...p, name:e.target.value}))}
                 onFocus={e => e.target.style.borderColor='#6366f1'}
                 onBlur={e => e.target.style.borderColor='#e2e8f0'} />
@@ -176,12 +178,11 @@ export default function Settings() {
 
             {/* אייקון */}
             <div style={{ marginBottom:16 }}>
-              <label style={lbl}>אייקון</label>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6, background:'#f8fafc', borderRadius:10, padding:10, border:'1px solid #e2e8f0' }}>
+              <label style={lbl}>אייקון — נבחר: {form.icon}</label>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:4, background:'#f8fafc', borderRadius:10, padding:10, border:'1px solid #e2e8f0', maxHeight:160, overflowY:'auto' }}>
                 {icons.map(icon => (
-                  <span key={icon} className="icon-pick"
-                    onClick={() => setForm(p => ({...p, icon}))}
-                    style={{ fontSize:22, opacity: form.icon===icon ? 1 : 0.5, background: form.icon===icon ? '#eef2ff' : 'transparent', outline: form.icon===icon ? '2px solid #6366f1' : 'none' }}>
+                  <span key={icon} className={`icon-pick${form.icon===icon ? ' selected' : ''}`}
+                    onClick={() => setForm(p => ({...p, icon}))}>
                     {icon}
                   </span>
                 ))}
