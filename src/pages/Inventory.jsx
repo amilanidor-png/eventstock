@@ -1,29 +1,34 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
-const CATS  = { av:'AV', lighting:'תאורה', tent:'אוהלים', furniture:'ריהוט', other:'אחר' }
-const CONDS = { excellent:'מצוין', good:'טוב', fair:'בינוני', maintenance:'תחזוקה' }
+const CONDS      = { excellent:'מצוין', good:'טוב', fair:'בינוני', maintenance:'תחזוקה' }
 const COND_COLOR = { excellent:'#10b981', good:'#f59e0b', fair:'#f97316', maintenance:'#ef4444' }
 const COND_BG    = { excellent:'#ecfdf5', good:'#fffbeb', fair:'#fff7ed', maintenance:'#fef2f2' }
-const EMPTY = { name:'', category:'av', description:'', daily_rate:'', quantity_total:'', condition:'excellent', notes:'' }
+const EMPTY      = { name:'', category_id:'', description:'', daily_rate:'', quantity_total:'', condition:'excellent', notes:'' }
 
 export default function Inventory() {
-  const [items, setItems]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const [modal, setModal]     = useState(false)
-  const [form, setForm]       = useState(EMPTY)
-  const [saving, setSaving]   = useState(false)
-  const [search, setSearch]   = useState('')
-  const [cat, setCat]         = useState('all')
+  const [items, setItems]       = useState([])
+  const [cats, setCats]         = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [modal, setModal]       = useState(false)
+  const [form, setForm]         = useState(EMPTY)
+  const [saving, setSaving]     = useState(false)
+  const [search, setSearch]     = useState('')
+  const [catFilter, setCatFilter] = useState('all')
 
   const load = async () => {
-    const { data } = await supabase.from('equipment').select('*').eq('is_active', true).order('name')
-    setItems(data || [])
+    const [{ data: eq }, { data: categories }] = await Promise.all([
+      supabase.from('equipment').select('*, equipment_categories(id, name, icon)').eq('is_active', true).order('name'),
+      supabase.from('equipment_categories').select('*').order('name'),
+    ])
+    setItems(eq || [])
+    setCats(categories || [])
     setLoading(false)
   }
   useEffect(() => { load() }, [])
 
   const save = async () => {
+    if (!form.name || !form.daily_rate || !form.quantity_total) return alert('נא למלא שדות חובה')
     setSaving(true)
     const payload = { ...form, daily_rate: +form.daily_rate, quantity_total: +form.quantity_total }
     if (form.id) await supabase.from('equipment').update(payload).eq('id', form.id)
@@ -41,7 +46,7 @@ export default function Inventory() {
   }
 
   const filtered = items.filter(i =>
-    (cat === 'all' || i.category === cat) && i.name.includes(search)
+    (catFilter === 'all' || i.category_id === catFilter) && i.name.includes(search)
   )
 
   if (loading) return (
@@ -83,16 +88,24 @@ export default function Inventory() {
         <div style={{ position:'relative' }}>
           <span style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', fontSize:14 }}>🔍</span>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="חיפוש פריט..."
-            style={{ background:'#fff', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'9px 36px 9px 14px', fontSize:13, outline:'none', width:200, boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }} />
+            style={{ background:'#fff', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'9px 36px 9px 14px', fontSize:13, outline:'none', width:200 }} />
         </div>
-        {['all', ...Object.keys(CATS)].map(c => (
-          <button key={c} className="chip-btn" onClick={() => setCat(c)}
-            style={{ padding:'8px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer', transition:'all 0.15s',
-              borderColor: cat===c ? '#6366f1' : '#e2e8f0',
-              background:  cat===c ? '#eef2ff' : '#fff',
-              color:       cat===c ? '#6366f1' : '#64748b',
-              fontWeight:  cat===c ? 700 : 400 }}>
-            {c === 'all' ? 'הכל' : CATS[c]}
+        <button className="chip-btn" onClick={() => setCatFilter('all')}
+          style={{ padding:'8px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
+            borderColor: catFilter==='all' ? '#6366f1' : '#e2e8f0',
+            background:  catFilter==='all' ? '#eef2ff' : '#fff',
+            color:       catFilter==='all' ? '#6366f1' : '#64748b',
+            fontWeight:  catFilter==='all' ? 700 : 400 }}>
+          הכל
+        </button>
+        {cats.map(c => (
+          <button key={c.id} className="chip-btn" onClick={() => setCatFilter(c.id)}
+            style={{ padding:'8px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
+              borderColor: catFilter===c.id ? '#6366f1' : '#e2e8f0',
+              background:  catFilter===c.id ? '#eef2ff' : '#fff',
+              color:       catFilter===c.id ? '#6366f1' : '#64748b',
+              fontWeight:  catFilter===c.id ? 700 : 400 }}>
+            {c.icon} {c.name}
           </button>
         ))}
       </div>
@@ -107,21 +120,20 @@ export default function Inventory() {
                 {CONDS[item.condition]}
               </span>
               <div style={{ display:'flex', gap:6 }}>
-                <button className="icon-btn" onClick={() => { setForm(item); setModal(true) }}
+                <button className="icon-btn" onClick={() => { setForm({...item, category_id: item.category_id || ''}); setModal(true) }}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>✏️</button>
                 <button className="icon-btn" onClick={() => del(item.id)}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>🗑️</button>
               </div>
             </div>
-
             <div style={{ fontSize:16, fontWeight:700, color:'#0f172a', marginBottom:4 }}>{item.name}</div>
-            <div style={{ fontSize:12, color:'#94a3b8', marginBottom:14 }}>{CATS[item.category]}</div>
-
+            <div style={{ fontSize:12, color:'#94a3b8', marginBottom:14 }}>
+              {item.equipment_categories?.icon} {item.equipment_categories?.name || '—'}
+            </div>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:14, borderTop:'1px solid #f8fafc' }}>
               <span style={{ fontSize:15, fontWeight:700, color:'#6366f1' }}>₪{item.daily_rate}<span style={{ fontSize:11, fontWeight:400, color:'#94a3b8' }}>/יום</span></span>
               <span style={{ fontSize:12, color:'#64748b', background:'#f8fafc', padding:'3px 10px', borderRadius:20 }}>כמות: {item.quantity_total}</span>
             </div>
-
             {item.notes && <div style={{ fontSize:12, color:'#94a3b8', marginTop:10, paddingTop:10, borderTop:'1px solid #f8fafc' }}>{item.notes}</div>}
           </div>
         ))}
@@ -141,38 +153,42 @@ export default function Inventory() {
             <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>{form.id ? '✏️ עריכת פריט' : '➕ פריט חדש'}</h2>
 
             {[
-              { label:'שם הפריט *', key:'name', type:'text', placeholder:'לדוגמה: מערכת שמע' },
-              { label:'מחיר יומי (₪) *', key:'daily_rate', type:'number', placeholder:'0' },
-              { label:'כמות במלאי *', key:'quantity_total', type:'number', placeholder:'0' },
-              { label:'תיאור', key:'description', type:'text', placeholder:'תיאור קצר...' },
-              { label:'הערות', key:'notes', type:'text', placeholder:'הערות פנימיות...' },
+              { label:'שם הפריט *',     key:'name',           type:'text',   placeholder:'לדוגמה: מערכת שמע' },
+              { label:'מחיר יומי (₪) *', key:'daily_rate',    type:'number', placeholder:'0' },
+              { label:'כמות במלאי *',   key:'quantity_total', type:'number', placeholder:'0' },
+              { label:'תיאור',          key:'description',    type:'text',   placeholder:'תיאור קצר...' },
+              { label:'הערות',          key:'notes',          type:'text',   placeholder:'הערות פנימיות...' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom:14 }}>
-                <label style={{ display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:5 }}>{f.label}</label>
+                <label style={lbl}>{f.label}</label>
                 <input type={f.type} value={form[f.key] || ''} placeholder={f.placeholder}
                   onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  style={{ width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box', transition:'border-color 0.2s' }}
+                  style={{ width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box' }}
                   onFocus={e => e.target.style.borderColor='#6366f1'}
                   onBlur={e => e.target.style.borderColor='#e2e8f0'} />
               </div>
             ))}
 
-            {[
-              { label:'קטגוריה', key:'category', options: Object.entries(CATS) },
-              { label:'מצב',     key:'condition', options: Object.entries(CONDS) },
-            ].map(f => (
-              <div key={f.key} style={{ marginBottom:14 }}>
-                <label style={{ display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:5 }}>{f.label}</label>
-                <select value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  style={{ width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none' }}>
-                  {f.options.map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
-            ))}
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>קטגוריה</label>
+              <select value={form.category_id || ''} onChange={e => setForm(p => ({ ...p, category_id: e.target.value }))}
+                style={{ width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none' }}>
+                <option value="">-- בחר קטגוריה --</option>
+                {cats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+              </select>
+            </div>
+
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>מצב</label>
+              <select value={form.condition} onChange={e => setForm(p => ({ ...p, condition: e.target.value }))}
+                style={{ width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none' }}>
+                {Object.entries(CONDS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
 
             <div style={{ display:'flex', gap:10, marginTop:24 }}>
               <button onClick={save} disabled={saving}
-                style={{ flex:1, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'12px', borderRadius:12, cursor:'pointer', fontSize:15, transition:'all 0.2s' }}>
+                style={{ flex:1, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'12px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
                 {saving ? 'שומר...' : 'שמור'}
               </button>
               <button onClick={() => setModal(false)}
@@ -186,3 +202,5 @@ export default function Inventory() {
     </div>
   )
 }
+
+const lbl = { display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:5 }

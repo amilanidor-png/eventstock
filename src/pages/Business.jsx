@@ -1,16 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
-const EXP_CAT = {
-  rent:      { label:'שכירות',        icon:'🏠', color:'#6366f1' },
-  vehicle:   { label:'רכב',           icon:'🚗', color:'#f59e0b' },
-  equipment: { label:'ציוד',          icon:'🔧', color:'#10b981' },
-  salary:    { label:'שכירות עובדים', icon:'👷', color:'#8b5cf6' },
-  marketing: { label:'שיווק',         icon:'📣', color:'#ec4899' },
-  utilities: { label:'חשמל/מים',      icon:'💡', color:'#14b8a6' },
-  other:     { label:'אחר',           icon:'📦', color:'#94a3b8' },
-}
-
 const PERIODS = [
   { key:'day',   label:'היום' },
   { key:'week',  label:'שבוע' },
@@ -19,7 +9,7 @@ const PERIODS = [
   { key:'all',   label:'מאז הקמה' },
 ]
 
-const EMPTY_EXP = { amount:'', category:'other', description:'', paid_at: new Date().toISOString().slice(0,10), notes:'' }
+const EMPTY_EXP = { amount:'', category_id:'', description:'', paid_at: new Date().toISOString().slice(0,10), notes:'' }
 
 function getPeriodRange(period) {
   const now = new Date()
@@ -33,82 +23,83 @@ function getPeriodRange(period) {
   return { from: '2000-01-01', to: today }
 }
 
-// ייצוא CSV (נפתח באקסל)
-function exportToCSV({ payments, expenses, income, totalExpenses, balance, periodLabel }) {
-  const BOM = '\uFEFF' // תמיכה בעברית באקסל
+function exportToCSV({ payments, expenses, cats, income, totalExpenses, balance, periodLabel }) {
+  const BOM = '\uFEFF'
   const rows = []
-
   rows.push(['דוח מצב עסק — אוורסט השכרת ציוד'])
   rows.push([`תקופה: ${periodLabel}`])
   rows.push([`תאריך הפקה: ${new Date().toLocaleDateString('he-IL')}`])
   rows.push([])
-
   rows.push(['סיכום'])
   rows.push(['הכנסות', `₪${income.toLocaleString()}`])
   rows.push(['הוצאות', `₪${totalExpenses.toLocaleString()}`])
-  rows.push(['יתרה', `₪${balance.toLocaleString()}`])
+  rows.push(['יתרה',   `₪${balance.toLocaleString()}`])
   rows.push([])
-
   rows.push(['הכנסות מתשלומים'])
   rows.push(['תאריך', 'סכום', 'אסמכתה', 'הערות'])
-  payments.forEach(p => rows.push([p.paid_at, p.amount, p.reference || '', p.notes || '']))
+  payments.forEach(p => rows.push([p.paid_at, p.amount, p.reference||'', p.notes||'']))
   rows.push([])
-
   rows.push(['הוצאות'])
   rows.push(['תאריך', 'תיאור', 'קטגוריה', 'סכום', 'הערות'])
-  expenses.forEach(e => rows.push([e.paid_at, e.description, EXP_CAT[e.category]?.label || e.category, e.amount, e.notes || '']))
-
+  expenses.forEach(e => {
+    const cat = cats.find(c => c.id === e.category_id)
+    rows.push([e.paid_at, e.description, cat?.name || '—', e.amount, e.notes||''])
+  })
   const csv = BOM + rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' })
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
-  a.href     = url
-  a.download = `אוורסט-דוח-${new Date().toISOString().slice(0,10)}.csv`
-  a.click()
+  a.href = url; a.download = `אוורסט-דוח-${new Date().toISOString().slice(0,10)}.csv`; a.click()
   URL.revokeObjectURL(url)
 }
 
 export default function Business() {
-  const [period, setPeriod]         = useState('month')
-  const [income, setIncome]         = useState(0)
-  const [payments, setPayments]     = useState([])
-  const [expenses, setExpenses]     = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [exporting, setExporting]   = useState(false)
-  const [modal, setModal]           = useState(false)
-  const [form, setForm]             = useState(EMPTY_EXP)
-  const [saving, setSaving]         = useState(false)
+  const [period, setPeriod]       = useState('month')
+  const [income, setIncome]       = useState(0)
+  const [payments, setPayments]   = useState([])
+  const [expenses, setExpenses]   = useState([])
+  const [cats, setCats]           = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [exporting, setExporting] = useState(false)
+  const [modal, setModal]         = useState(false)
+  const [form, setForm]           = useState(EMPTY_EXP)
+  const [saving, setSaving]       = useState(false)
+
+  const loadCats = async () => {
+    const { data } = await supabase.from('expense_categories').select('*').order('name')
+    setCats(data || [])
+    return data || []
+  }
 
   const load = async () => {
     setLoading(true)
     const { from, to } = getPeriodRange(period)
-
-    const [{ data: pays }, { data: exps }] = await Promise.all([
+    const [{ data: pays }, { data: exps }, catsData] = await Promise.all([
       supabase.from('payments').select('*').gte('paid_at', from).lte('paid_at', to).order('paid_at', { ascending:false }),
-      supabase.from('expenses').select('*').gte('paid_at', from).lte('paid_at', to).order('paid_at', { ascending:false }),
+      supabase.from('expenses').select('*, expense_categories(id, name, icon, color)').gte('paid_at', from).lte('paid_at', to).order('paid_at', { ascending:false }),
+      loadCats(),
     ])
-
-    const paysData = pays || []
-    setPayments(paysData)
-    setIncome(paysData.reduce((s, p) => s + +p.amount, 0))
+    setPayments(pays || [])
+    setIncome((pays||[]).reduce((s,p) => s + +p.amount, 0))
     setExpenses(exps || [])
+    setCats(catsData)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [period])
 
-  const totalExpenses = expenses.reduce((s, e) => s + +e.amount, 0)
+  const totalExpenses = expenses.reduce((s,e) => s + +e.amount, 0)
   const balance       = income - totalExpenses
 
-  const byCategory = Object.entries(EXP_CAT).map(([key, meta]) => ({
-    key, ...meta,
-    total: expenses.filter(e => e.category === key).reduce((s, e) => s + +e.amount, 0)
+  const byCategory = cats.map(cat => ({
+    ...cat,
+    total: expenses.filter(e => e.category_id === cat.id).reduce((s,e) => s + +e.amount, 0)
   })).filter(c => c.total > 0).sort((a,b) => b.total - a.total)
 
   const handleExport = () => {
     setExporting(true)
     const periodLabel = PERIODS.find(p => p.key === period)?.label || period
-    exportToCSV({ payments, expenses, income, totalExpenses, balance, periodLabel })
+    exportToCSV({ payments, expenses, cats, income, totalExpenses, balance, periodLabel })
     setTimeout(() => setExporting(false), 1000)
   }
 
@@ -116,7 +107,7 @@ export default function Business() {
     if (!form.amount || !form.description) return alert('נא למלא סכום ותיאור')
     setSaving(true)
     const { data:{ user } } = await supabase.auth.getUser()
-    await supabase.from('expenses').insert({ ...form, amount: +form.amount, created_by: user.id })
+    await supabase.from('expenses').insert({ ...form, amount:+form.amount, created_by:user.id })
     await load()
     setModal(false)
     setForm(EMPTY_EXP)
@@ -149,14 +140,13 @@ export default function Business() {
           <p style={{ color:'#94a3b8', fontSize:13, marginTop:3 }}>סקירה פיננסית</p>
         </div>
         <div style={{ display:'flex', gap:10 }}>
-          {/* ייצוא לאקסל */}
           <button onClick={handleExport} disabled={exporting}
-            style={{ background:'#fff', border:'1px solid #e2e8f0', color:'#475569', fontWeight:600, padding:'10px 16px', borderRadius:12, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', gap:6, transition:'all 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}
+            style={{ background:'#fff', border:'1px solid #e2e8f0', color:'#475569', fontWeight:600, padding:'10px 16px', borderRadius:12, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', gap:6, transition:'all 0.2s' }}
             onMouseEnter={e => e.currentTarget.style.borderColor='#6366f1'}
             onMouseLeave={e => e.currentTarget.style.borderColor='#e2e8f0'}>
             {exporting ? '⏳' : '📊'} {exporting ? 'מייצא...' : 'ייצוא לאקסל'}
           </button>
-          <button onClick={() => { setForm(EMPTY_EXP); setModal(true) }}
+          <button onClick={() => { setForm({...EMPTY_EXP, category_id: cats[0]?.id || ''}); setModal(true) }}
             style={{ background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'10px 20px', borderRadius:12, cursor:'pointer', fontSize:14, boxShadow:'0 4px 12px rgba(99,102,241,0.25)', transition:'all 0.2s' }}
             onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
             onMouseLeave={e => e.currentTarget.style.transform='translateY(0)'}>
@@ -165,7 +155,7 @@ export default function Business() {
         </div>
       </div>
 
-      {/* Period filter */}
+      {/* Period */}
       <div style={{ display:'flex', gap:8, marginBottom:24, flexWrap:'wrap' }}>
         {PERIODS.map(p => (
           <button key={p.key} className="chip-btn" onClick={() => setPeriod(p.key)}
@@ -188,15 +178,13 @@ export default function Business() {
           {/* KPI */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:28 }}>
             {[
-              { label:'הכנסות',  value:income,        icon:'💰', color:'#10b981', bg:'#ecfdf5', border:'#bbf7d0' },
-              { label:'הוצאות',  value:totalExpenses, icon:'💸', color:'#ef4444', bg:'#fef2f2', border:'#fecaca' },
-              { label:'יתרה',    value:balance,       icon: balance>=0 ? '📈' : '📉', color: balance>=0 ? '#6366f1' : '#ef4444', bg: balance>=0 ? '#eef2ff' : '#fef2f2', border: balance>=0 ? '#c7d2fe' : '#fecaca' },
+              { label:'הכנסות', value:income,        icon:'💰', color:'#10b981', bg:'#ecfdf5', border:'#bbf7d0' },
+              { label:'הוצאות', value:totalExpenses, icon:'💸', color:'#ef4444', bg:'#fef2f2', border:'#fecaca' },
+              { label:'יתרה',   value:balance,       icon: balance>=0?'📈':'📉', color: balance>=0?'#6366f1':'#ef4444', bg: balance>=0?'#eef2ff':'#fef2f2', border: balance>=0?'#c7d2fe':'#fecaca' },
             ].map((c,i) => (
               <div key={i} style={{ background:c.bg, borderRadius:16, padding:'22px 24px', border:`1px solid ${c.border}`, animation:`fadeUp 0.3s ease ${i*0.08}s both` }}>
                 <div style={{ fontSize:28, marginBottom:10 }}>{c.icon}</div>
-                <div style={{ fontSize:28, fontWeight:800, color:c.color }}>
-                  ₪{c.value.toLocaleString('he-IL', { minimumFractionDigits:0, maximumFractionDigits:0 })}
-                </div>
+                <div style={{ fontSize:28, fontWeight:800, color:c.color }}>₪{c.value.toLocaleString('he-IL', { minimumFractionDigits:0 })}</div>
                 <div style={{ fontSize:13, color:'#64748b', marginTop:4 }}>{c.label}</div>
               </div>
             ))}
@@ -209,15 +197,15 @@ export default function Business() {
               {byCategory.length === 0
                 ? <div style={{ textAlign:'center', color:'#94a3b8', padding:'30px 0' }}>אין הוצאות בתקופה זו</div>
                 : byCategory.map(c => (
-                  <div key={c.key} style={{ marginBottom:14 }}>
+                  <div key={c.id} style={{ marginBottom:14 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
                       <span style={{ fontSize:13, color:'#475569', display:'flex', gap:6, alignItems:'center' }}>
-                        <span>{c.icon}</span>{c.label}
+                        <span>{c.icon}</span>{c.name}
                       </span>
-                      <span style={{ fontSize:13, fontWeight:700, color:c.color }}>₪{c.total.toLocaleString()}</span>
+                      <span style={{ fontSize:13, fontWeight:700, color:c.color||'#6366f1' }}>₪{c.total.toLocaleString()}</span>
                     </div>
                     <div style={{ height:6, background:'#f1f5f9', borderRadius:10 }}>
-                      <div style={{ height:'100%', width:`${totalExpenses>0 ? c.total/totalExpenses*100 : 0}%`, background:c.color, borderRadius:10, transition:'width 0.5s ease' }} />
+                      <div style={{ height:'100%', width:`${totalExpenses>0 ? c.total/totalExpenses*100 : 0}%`, background:c.color||'#6366f1', borderRadius:10, transition:'width 0.5s ease' }} />
                     </div>
                   </div>
                 ))
@@ -231,8 +219,8 @@ export default function Business() {
                 ? <div style={{ textAlign:'center', color:'#94a3b8', padding:'30px 0' }}>אין נתונים בתקופה זו</div>
                 : <>
                   {[
-                    { label:'💰 הכנסות', value:income,        color:'#10b981', total:income+totalExpenses },
-                    { label:'💸 הוצאות', value:totalExpenses, color:'#ef4444', total:income+totalExpenses },
+                    { label:'💰 הכנסות', value:income,        color:'#10b981' },
+                    { label:'💸 הוצאות', value:totalExpenses, color:'#ef4444' },
                   ].map((b,i) => (
                     <div key={i} style={{ marginBottom:16 }}>
                       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
@@ -240,14 +228,14 @@ export default function Business() {
                         <span style={{ fontSize:13, fontWeight:700, color:b.color }}>₪{b.value.toLocaleString()}</span>
                       </div>
                       <div style={{ height:10, background:'#f1f5f9', borderRadius:10 }}>
-                        <div style={{ height:'100%', width:`${b.total>0 ? b.value/b.total*100 : 0}%`, background:b.color, borderRadius:10, transition:'width 0.5s ease' }} />
+                        <div style={{ height:'100%', width:`${(income+totalExpenses)>0 ? b.value/(income+totalExpenses)*100 : 0}%`, background:b.color, borderRadius:10, transition:'width 0.5s ease' }} />
                       </div>
                     </div>
                   ))}
-                  <div style={{ background: balance>=0 ? '#ecfdf5' : '#fef2f2', borderRadius:12, padding:'12px 16px', textAlign:'center', marginTop:8 }}>
+                  <div style={{ background: balance>=0?'#ecfdf5':'#fef2f2', borderRadius:12, padding:'12px 16px', textAlign:'center', marginTop:8 }}>
                     <div style={{ fontSize:12, color:'#64748b' }}>רווח נקי</div>
-                    <div style={{ fontSize:22, fontWeight:800, color: balance>=0 ? '#10b981' : '#ef4444', marginTop:2 }}>
-                      {balance>=0 ? '+' : ''}₪{balance.toLocaleString()}
+                    <div style={{ fontSize:22, fontWeight:800, color: balance>=0?'#10b981':'#ef4444', marginTop:2 }}>
+                      {balance>=0?'+':''}₪{balance.toLocaleString()}
                     </div>
                   </div>
                 </>
@@ -264,17 +252,17 @@ export default function Business() {
             {expenses.length === 0
               ? <div style={{ padding:'40px 0', textAlign:'center', color:'#94a3b8' }}>אין הוצאות בתקופה זו</div>
               : expenses.map((e, i) => {
-                const cat = EXP_CAT[e.category]
+                const cat = e.expense_categories
                 return (
                   <div key={e.id} className="exp-row"
                     style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 24px', borderBottom: i<expenses.length-1 ? '1px solid #f8fafc' : 'none' }}>
                     <div style={{ display:'flex', gap:12, alignItems:'center' }}>
-                      <div style={{ width:38, height:38, borderRadius:10, background:`${cat.color}18`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
-                        {cat.icon}
+                      <div style={{ width:38, height:38, borderRadius:10, background:`${cat?.color||'#6366f1'}18`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
+                        {cat?.icon || '📦'}
                       </div>
                       <div>
                         <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{e.description}</div>
-                        <div style={{ fontSize:12, color:'#94a3b8', marginTop:1 }}>{cat.label} · {e.paid_at}</div>
+                        <div style={{ fontSize:12, color:'#94a3b8', marginTop:1 }}>{cat?.name || '—'} · {e.paid_at}</div>
                       </div>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -323,8 +311,9 @@ export default function Business() {
 
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>קטגוריה</label>
-              <select style={inp} value={form.category} onChange={e => setForm(p => ({...p,category:e.target.value}))}>
-                {Object.entries(EXP_CAT).map(([k,v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+              <select style={inp} value={form.category_id} onChange={e => setForm(p => ({...p,category_id:e.target.value}))}>
+                <option value="">-- בחר קטגוריה --</option>
+                {cats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
               </select>
             </div>
 
