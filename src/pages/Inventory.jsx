@@ -7,13 +7,13 @@ const COND_BG    = { excellent:'#ecfdf5', good:'#fffbeb', fair:'#fff7ed', mainte
 const EMPTY      = { name:'', category_id:'', description:'', daily_rate:'', quantity_total:'', condition:'excellent', notes:'' }
 
 export default function Inventory() {
-  const [items, setItems]       = useState([])
-  const [cats, setCats]         = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [modal, setModal]       = useState(false)
-  const [form, setForm]         = useState(EMPTY)
-  const [saving, setSaving]     = useState(false)
-  const [search, setSearch]     = useState('')
+  const [items, setItems]         = useState([])
+  const [cats, setCats]           = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [modal, setModal]         = useState(false)
+  const [form, setForm]           = useState(EMPTY)
+  const [saving, setSaving]       = useState(false)
+  const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState('all')
 
   const load = async () => {
@@ -30,7 +30,15 @@ export default function Inventory() {
   const save = async () => {
     if (!form.name || !form.daily_rate || !form.quantity_total) return alert('נא למלא שדות חובה')
     setSaving(true)
-    const payload = { ...form, daily_rate: +form.daily_rate, quantity_total: +form.quantity_total }
+    const payload = {
+      name:           form.name,
+      category_id:    form.category_id || null,
+      description:    form.description,
+      daily_rate:     +form.daily_rate,
+      quantity_total: +form.quantity_total,
+      condition:      form.condition,
+      notes:          form.notes,
+    }
     if (form.id) await supabase.from('equipment').update(payload).eq('id', form.id)
     else         await supabase.from('equipment').insert(payload)
     await load()
@@ -120,7 +128,8 @@ export default function Inventory() {
                 {CONDS[item.condition]}
               </span>
               <div style={{ display:'flex', gap:6 }}>
-                <button className="icon-btn" onClick={() => { setForm({...item, category_id: item.category_id || ''}); setModal(true) }}
+                <button className="icon-btn"
+                  onClick={() => { setForm({ ...item, category_id: item.category_id || '' }); setModal(true) }}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>✏️</button>
                 <button className="icon-btn" onClick={() => del(item.id)}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>🗑️</button>
@@ -153,11 +162,11 @@ export default function Inventory() {
             <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>{form.id ? '✏️ עריכת פריט' : '➕ פריט חדש'}</h2>
 
             {[
-              { label:'שם הפריט *',     key:'name',           type:'text',   placeholder:'לדוגמה: מערכת שמע' },
+              { label:'שם הפריט *',      key:'name',           type:'text',   placeholder:'לדוגמה: מערכת שמע' },
               { label:'מחיר יומי (₪) *', key:'daily_rate',    type:'number', placeholder:'0' },
-              { label:'כמות במלאי *',   key:'quantity_total', type:'number', placeholder:'0' },
-              { label:'תיאור',          key:'description',    type:'text',   placeholder:'תיאור קצר...' },
-              { label:'הערות',          key:'notes',          type:'text',   placeholder:'הערות פנימיות...' },
+              { label:'כמות במלאי *',    key:'quantity_total', type:'number', placeholder:'0' },
+              { label:'תיאור',           key:'description',    type:'text',   placeholder:'תיאור קצר...' },
+              { label:'הערות',           key:'notes',          type:'text',   placeholder:'הערות פנימיות...' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom:14 }}>
                 <label style={lbl}>{f.label}</label>
