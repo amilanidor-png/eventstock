@@ -19,6 +19,7 @@ export default function Rentals() {
   const [filterStatus, setFilter]       = useState('all')
   const [availability, setAvailability] = useState({})
   const [availLoading, setAvailLoading] = useState(false)
+  const [equipSearch, setEquipSearch]   = useState('')
 
   const load = async () => {
     const [{ data:r }, { data:c }, { data:e }] = await Promise.all([
@@ -58,6 +59,7 @@ export default function Rentals() {
     setForm(EMPTY_FORM)
     setLines([{ equipment_id:'', quantity:1 }])
     setAvailability({})
+    setEquipSearch('')
     setModal(true)
   }
 
@@ -78,6 +80,7 @@ export default function Rentals() {
     const { data: items } = await supabase.from('rental_items').select('equipment_id, quantity').eq('rental_id', r.id)
     setLines(items?.length ? items : [{ equipment_id:'', quantity:1 }])
     setAvailability({})
+    setEquipSearch('')
     setModal(true)
   }
 
@@ -109,7 +112,6 @@ export default function Rentals() {
     const conflicts = checkConflicts()
     if (conflicts.length > 0) return alert('⚠️ אין מספיק ציוד זמין:\n\n' + conflicts.join('\n'))
     setSaving(true)
-
     const payload = {
       ...form,
       discount:       +form.discount,
@@ -117,7 +119,6 @@ export default function Rentals() {
       delivery_price: +form.delivery_price,
       assembly_price: +form.assembly_price,
     }
-
     if (editId) {
       await supabase.from('rentals').update(payload).eq('id', editId)
       await supabase.from('rental_items').delete().eq('rental_id', editId)
@@ -134,9 +135,15 @@ export default function Rentals() {
         await supabase.from('rental_items').insert({ rental_id:rental.id, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
       }
     }
-
     await load()
     setModal(false); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setEditId(null); setSaving(false)
+  }
+
+  const shareWhatsApp = (r) => {
+    const customer = r.customers?.full_name || 'לקוח'
+    const days = Math.max(1, Math.ceil((new Date(r.end_date) - new Date(r.start_date)) / 86400000) + 1)
+    const msg = `שלום ${customer} 👋\n\n*אוורסט - השכרת ציוד אירועים*\n————————————————\n📅 *תאריכים:* ${r.start_date} עד ${r.end_date} (${days} ימים)\n${r.pickup_type === 'delivery' ? `🚚 *משלוח לכתובת:* ${r.delivery_address || '—'}` : '📦 *איסוף עצמי*'}\n${r.notes ? `📝 *הערות:* ${r.notes}` : ''}\n————————————————\nתודה שבחרת באוורסט! 🏔️`
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
   const updateStatus = async (id, status) => {
@@ -144,33 +151,14 @@ export default function Rentals() {
     setRentals(p => p.map(r => r.id===id ? {...r,status} : r))
   }
 
-  const shareWhatsApp = (r) => {
-  const customer = r.customers?.full_name || 'לקוח'
-  const days = Math.max(1, Math.ceil((new Date(r.end_date) - new Date(r.start_date)) / 86400000) + 1)
-  const msg = `שלום ${customer} 👋
-
-*אוורסט - השכרת ציוד אירועים*
-————————————————
-📅 *תאריכים:* ${r.start_date} עד ${r.end_date} (${days} ימים)
-${r.pickup_type === 'delivery' ? `🚚 *משלוח לכתובת:* ${r.delivery_address || '—'}` : '📦 *איסוף עצמי*'}
-${r.delivery_price > 0 ? `🚚 *עלות הובלה:* ₪${r.delivery_price}` : ''}
-${r.assembly_price > 0 ? `🔨 *הרכבה ופירוק:* ₪${r.assembly_price}` : ''}
-${r.discount > 0 ? `🎁 *הנחה:* ₪${r.discount}` : ''}
-${r.notes ? `📝 *הערות:* ${r.notes}` : ''}
-————————————————
-תודה שבחרת באוורסט! 🏔️`
-
-  const url = `https://wa.me/?text=${encodeURIComponent(msg)}`
-  window.open(url, '_blank')
-}
-
-const del = async (id) => {
+  const del = async (id) => {
     if (!confirm('למחוק השכרה זו?')) return
     await supabase.from('rentals').delete().eq('id', id)
     setRentals(p => p.filter(r => r.id !== id))
   }
 
-  const filtered = rentals.filter(r => filterStatus==='all' || r.status===filterStatus)
+  const filtered       = rentals.filter(r => filterStatus==='all' || r.status===filterStatus)
+  const filteredEquip  = equipment.filter(e => e.name.includes(equipSearch))
 
   if (loading) return (
     <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
@@ -250,8 +238,7 @@ const del = async (id) => {
                   {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
                 <button className="icon-btn" onClick={() => shareWhatsApp(r)}
-  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}
-  title="שתף ב-WhatsApp">📱</button>
+                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }} title="שתף ב-WhatsApp">📱</button>
                 <button className="icon-btn" onClick={() => openEdit(r)}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>✏️</button>
                 <button className="icon-btn" onClick={() => del(r.id)}
@@ -331,9 +318,21 @@ const del = async (id) => {
                 onBlur={e => e.target.style.borderColor='#e2e8f0'} />
             </div>
 
-            {/* Lines */}
+            {/* פריטים */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>פריטים</label>
+
+              {/* חיפוש ציוד */}
+              <div style={{ position:'relative', marginBottom:10 }}>
+                <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', fontSize:13 }}>🔍</span>
+                <input
+                  style={{ ...inp, paddingRight:32, fontSize:13 }}
+                  placeholder="חפש פריט לפי שם..."
+                  value={equipSearch}
+                  onChange={e => setEquipSearch(e.target.value)}
+                />
+              </div>
+
               {lines.map((l,i) => {
                 const avail = availability[l.equipment_id]
                 const isOver = l.equipment_id && avail !== undefined && +l.quantity > avail
@@ -343,7 +342,7 @@ const del = async (id) => {
                       <select style={{ ...inp, flex:2, borderColor: isOver ? '#ef4444' : '#e2e8f0' }}
                         value={l.equipment_id} onChange={e => updateLine(i,'equipment_id',e.target.value)}>
                         <option value="">-- בחר פריט --</option>
-                        {equipment.map(e => {
+                        {filteredEquip.map(e => {
                           const av = availability[e.id]
                           return <option key={e.id} value={e.id}>{e.name} (₪{e.daily_rate}/יום{av!==undefined ? ` | זמין: ${av}` : ''})</option>
                         })}
@@ -397,25 +396,21 @@ const del = async (id) => {
               <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:10 }}>
                 {form.pickup_type === 'delivery' && +form.delivery_price > 0 && (
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
-                    <span>🚚 הובלה</span>
-                    <span>₪{(+form.delivery_price).toLocaleString()}</span>
+                    <span>🚚 הובלה</span><span>₪{(+form.delivery_price).toLocaleString()}</span>
                   </div>
                 )}
                 {+form.assembly_price > 0 && (
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
-                    <span>🔨 הרכבה ופירוק</span>
-                    <span>₪{(+form.assembly_price).toLocaleString()}</span>
+                    <span>🔨 הרכבה ופירוק</span><span>₪{(+form.assembly_price).toLocaleString()}</span>
                   </div>
                 )}
                 {+form.discount > 0 && (
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#10b981' }}>
-                    <span>🎁 הנחה</span>
-                    <span>-₪{(+form.discount).toLocaleString()}</span>
+                    <span>🎁 הנחה</span><span>-₪{(+form.discount).toLocaleString()}</span>
                   </div>
                 )}
                 <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#f59e0b' }}>
-                  <span>🧾 מע"מ 18%</span>
-                  <span>₪{calcVAT().toFixed(2)}</span>
+                  <span>🧾 מע"מ 18%</span><span>₪{calcVAT().toFixed(2)}</span>
                 </div>
               </div>
               <div style={{ textAlign:'center', borderTop:'1px solid #c7d2fe', paddingTop:10 }}>
