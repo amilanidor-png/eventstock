@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 export default function Dashboard() {
-  const [stats, setStats]       = useState({ customers:0, equipment:0, rentals:0, active:0 })
-  const [rentals, setRentals]   = useState([])
-  const [returning, setReturning] = useState([]) // מחזירים היום
-  const [loading, setLoading]   = useState(true)
+  const [stats, setStats]         = useState({ customers:0, equipment:0, rentals:0, active:0 })
+  const [rentals, setRentals]     = useState([])
+  const [returning, setReturning] = useState([])
+  const [popular, setPopular]     = useState([])
+  const [loading, setLoading]     = useState(true)
 
   useEffect(() => {
     const load = async () => {
@@ -23,15 +24,29 @@ export default function Dashboard() {
         .select('id, status, start_date, end_date, customers(full_name)')
         .order('created_at', { ascending:false }).limit(5)
 
-      // השכרות שמסתיימות היום
       const { data: ret } = await supabase.from('rentals')
         .select('id, status, start_date, end_date, customers(full_name)')
-        .eq('end_date', today)
-        .in('status', ['active', 'confirmed'])
+        .eq('end_date', today).in('status', ['active','confirmed'])
+
+      // דוח ציוד פופולרי
+      const { data: popData } = await supabase
+        .from('rental_items')
+        .select('equipment_id, quantity, equipment(name, image_url, equipment_categories(icon))')
+
+      // ריכוז לפי פריט
+      const popMap = {}
+      ;(popData || []).forEach(item => {
+        const id = item.equipment_id
+        if (!popMap[id]) popMap[id] = { id, name: item.equipment?.name, image_url: item.equipment?.image_url, icon: item.equipment?.equipment_categories?.icon || '📦', count: 0, qty: 0 }
+        popMap[id].count += 1
+        popMap[id].qty   += +item.quantity
+      })
+      const sorted = Object.values(popMap).sort((a,b) => b.count - a.count).slice(0,5)
 
       setStats({ customers:c.count||0, equipment:e.count||0, rentals:r.count||0, active:active||0 })
       setRentals(recent || [])
       setReturning(ret || [])
+      setPopular(sorted)
       setLoading(false)
     }
     load()
@@ -55,6 +70,8 @@ export default function Dashboard() {
     </div>
   )
 
+  const maxCount = popular[0]?.count || 1
+
   return (
     <div style={{ direction:'rtl' }}>
       <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
@@ -67,9 +84,9 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* התראה — מחזירים היום */}
+      {/* התראה */}
       {returning.length > 0 && (
-        <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:14, padding:'16px 20px', marginBottom:24, animation:'fadeUp 0.3s ease' }}>
+        <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:14, padding:'16px 20px', marginBottom:24 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
             <span style={{ fontSize:20 }}>⚠️</span>
             <span style={{ fontWeight:700, fontSize:15, color:'#92400e' }}>
@@ -85,7 +102,7 @@ export default function Dashboard() {
                   <div style={{ fontSize:12, color:'#94a3b8' }}>{r.start_date} → {r.end_date}</div>
                 </div>
               </div>
-              <span style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${STATUS_COLOR[r.status]}33` }}>
+              <span style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600 }}>
                 {STATUS_LABEL[r.status]}
               </span>
             </div>
@@ -106,30 +123,62 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent rentals */}
-      <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
-        <div style={{ padding:'18px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ fontSize:16 }}>📋</span>
-          <span style={{ fontWeight:700, fontSize:15, color:'#1e293b' }}>השכרות אחרונות</span>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginBottom:20 }}>
+        {/* ציוד פופולרי */}
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+          <div style={{ padding:'18px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:16 }}>🏆</span>
+            <span style={{ fontWeight:700, fontSize:15, color:'#1e293b' }}>ציוד פופולרי</span>
+          </div>
+          {popular.length === 0
+            ? <div style={{ padding:'40px 24px', textAlign:'center', color:'#94a3b8' }}>אין נתונים עדיין</div>
+            : popular.map((item, i) => (
+              <div key={item.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 24px', borderBottom: i<popular.length-1 ? '1px solid #f8fafc' : 'none' }}>
+                <div style={{ fontSize:18, fontWeight:800, color:'#cbd5e1', width:20, textAlign:'center' }}>{i+1}</div>
+                <div style={{ width:36, height:36, borderRadius:10, overflow:'hidden', background:'#f8fafc', flexShrink:0 }}>
+                  {item.image_url
+                    ? <img src={item.image_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                    : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{item.icon}</div>
+                  }
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:600, fontSize:13, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.name}</div>
+                  <div style={{ height:4, background:'#f1f5f9', borderRadius:10, marginTop:4 }}>
+                    <div style={{ height:'100%', width:`${(item.count/maxCount)*100}%`, background:'linear-gradient(90deg,#6366f1,#8b5cf6)', borderRadius:10, transition:'width 0.5s ease' }} />
+                  </div>
+                </div>
+                <div style={{ fontSize:12, color:'#94a3b8', flexShrink:0 }}>{item.count} פעמים</div>
+              </div>
+            ))
+          }
         </div>
-        {rentals.length === 0 ? (
-          <div style={{ padding:'40px 24px', textAlign:'center', color:'#94a3b8' }}>
-            <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
-            <div>אין השכרות עדיין</div>
+
+        {/* השכרות אחרונות */}
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+          <div style={{ padding:'18px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:16 }}>📋</span>
+            <span style={{ fontWeight:700, fontSize:15, color:'#1e293b' }}>השכרות אחרונות</span>
           </div>
-        ) : rentals.map((r, i) => (
-          <div key={r.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 24px', borderBottom: i < rentals.length-1 ? '1px solid #f8fafc' : 'none', transition:'background 0.15s' }}
-            onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
-            onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-            <div>
-              <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
-              <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{r.start_date} → {r.end_date}</div>
-            </div>
-            <span style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${STATUS_COLOR[r.status]}33` }}>
-              {STATUS_LABEL[r.status]}
-            </span>
-          </div>
-        ))}
+          {rentals.length === 0
+            ? <div style={{ padding:'40px 24px', textAlign:'center', color:'#94a3b8' }}>
+                <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
+                <div>אין השכרות עדיין</div>
+              </div>
+            : rentals.map((r, i) => (
+              <div key={r.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 24px', borderBottom: i<rentals.length-1 ? '1px solid #f8fafc' : 'none', transition:'background 0.15s' }}
+                onMouseEnter={e => e.currentTarget.style.background='#fafafa'}
+                onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                <div>
+                  <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
+                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{r.start_date} → {r.end_date}</div>
+                </div>
+                <span style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${STATUS_COLOR[r.status]}22` }}>
+                  {STATUS_LABEL[r.status]}
+                </span>
+              </div>
+            ))
+          }
+        </div>
       </div>
     </div>
   )
