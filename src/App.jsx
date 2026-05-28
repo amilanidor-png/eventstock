@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import Dashboard from './pages/Dashboard'
@@ -28,23 +28,13 @@ const ALL_NAV = [
   { path: '/settings',   label: 'הגדרות',  icon: '⚙️', roles: ['owner','manager'] },
 ]
 
-const MOBILE_MAIN = ['/dashboard', '/rentals', '/inventory', '/customers']
-
-// ── Global design tokens ──────────────────────────────────────────
-export const T = {
-  bg:       '#0d0d0d',
-  surface:  '#161616',
-  card:     '#1a1a1a',
-  border:   '#2a2a2a',
-  red:      '#e53935',
-  redDark:  '#b71c1c',
-  redGlow:  'rgba(229,57,53,0.18)',
-  text:     '#f0f0f0',
-  muted:    '#888',
-  neo:      'inset 2px 2px 5px rgba(0,0,0,0.6), inset -2px -2px 5px rgba(255,255,255,0.04)',
-  neoOut:   '4px 4px 10px rgba(0,0,0,0.6), -2px -2px 6px rgba(255,255,255,0.03)',
-  neoPress: 'inset 3px 3px 8px rgba(0,0,0,0.7), inset -1px -1px 3px rgba(255,255,255,0.03)',
+const T = {
+  bg:'#0d0d0d', surface:'#161616', card:'#1a1a1a', border:'#2a2a2a',
+  red:'#e53935', redDark:'#b71c1c', redGlow:'rgba(229,57,53,0.18)',
+  text:'#f0f0f0', muted:'#888',
 }
+
+const MOBILE_MAIN = ['/dashboard', '/rentals', '/inventory', '/customers']
 
 function MobileNav({ nav }) {
   const [showMore, setShowMore] = useState(false)
@@ -110,7 +100,6 @@ function ProtectedRoute({ children, allowedRoles, userRole }) {
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', color:T.muted, direction:'rtl' }}>
       <div style={{ fontSize:48, marginBottom:16 }}>🔒</div>
       <div style={{ fontSize:18, fontWeight:700, color:T.text }}>אין לך הרשאה לצפות בדף זה</div>
-      <div style={{ fontSize:13, marginTop:8 }}>דף זה מיועד לבעלים ומנהלים בלבד</div>
     </div>
   )
   return children
@@ -128,23 +117,43 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  const fetchProfile = async (userId) => {
+    try {
+      const { data: prof, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      if (!error && prof) setProfile(prof)
+    } catch (err) {
+      console.error('PROFILE ERROR:', err)
+    }
+  }
+
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session)
-      if (data.session) {
-        const { data: prof } = await supabase.from('profiles').select('*').eq('id', data.session.user.id).single()
-        setProfile(prof)
-      }
-      setLoading(false)
-    })
+    const timer = setTimeout(() => setLoading(false), 4000)
+
+    supabase.auth.getSession()
+      .then(async ({ data }) => {
+        setSession(data.session)
+        if (data.session) await fetchProfile(data.session.user.id)
+      })
+      .catch(console.error)
+      .finally(() => {
+        clearTimeout(timer)
+        setLoading(false)
+      })
+
     const { data: listener } = supabase.auth.onAuthStateChange(async (_e, s) => {
       setSession(s)
-      if (s) {
-        const { data: prof } = await supabase.from('profiles').select('*').eq('id', s.user.id).single()
-        setProfile(prof)
-      }
+      if (s) await fetchProfile(s.user.id)
+      else setProfile(null)
     })
-    return () => listener.subscription.unsubscribe()
+
+    return () => {
+      clearTimeout(timer)
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   if (loading) return (
@@ -165,7 +174,13 @@ export default function App() {
     </BrowserRouter>
   )
 
-  if (!session) return <Login />
+  if (!session) return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="*" element={<Login />} />
+      </Routes>
+    </BrowserRouter>
+  )
 
   const userRole = profile?.role || 'staff'
   const nav      = ALL_NAV.filter(n => n.roles.includes(userRole))
@@ -176,32 +191,19 @@ export default function App() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: ${T.bg}; color: ${T.text}; }
         ::selection { background: ${T.red}; color: #fff; }
-
         .nav-link { transition: all 0.25s ease; position: relative; overflow: hidden; }
         .nav-link::before { content:''; position:absolute; inset:0; background: linear-gradient(135deg, ${T.red}, ${T.redDark}); opacity:0; transition: opacity 0.25s; border-radius:10px; }
         .nav-link:hover::before { opacity:0.12; }
-        .nav-link-active::before { opacity:1 !important; }
-
-        .neo-card { background:${T.card}; border-radius:16px; box-shadow:${T.neoOut}; border:1px solid ${T.border}; transition: box-shadow 0.2s, transform 0.2s; }
-        .neo-card:hover { box-shadow: 6px 6px 16px rgba(0,0,0,0.7), -2px -2px 8px rgba(255,255,255,0.04), 0 0 20px ${T.redGlow}; transform: translateY(-2px); }
-
         .neo-btn { background: linear-gradient(135deg, ${T.red}, ${T.redDark}); border:none; color:#fff; font-weight:700; border-radius:12px; cursor:pointer; transition:all 0.2s; box-shadow: 0 4px 15px rgba(229,57,53,0.4), inset 0 1px 0 rgba(255,255,255,0.1); }
-        .neo-btn:hover { transform:translateY(-2px); box-shadow: 0 8px 25px rgba(229,57,53,0.5), inset 0 1px 0 rgba(255,255,255,0.15); }
-        .neo-btn:active { transform:translateY(0); box-shadow: 0 2px 8px rgba(229,57,53,0.3); }
-
-        .neo-input { background:${T.card}; border:1px solid ${T.border}; color:${T.text}; border-radius:10px; box-shadow:${T.neo}; transition:all 0.2s; outline:none; }
-        .neo-input:focus { border-color:${T.red}; box-shadow:${T.neo}, 0 0 0 3px ${T.redGlow}; }
-
+        .neo-btn:hover { transform:translateY(-2px); box-shadow: 0 8px 25px rgba(229,57,53,0.5); }
+        .neo-btn:active { transform:translateY(0); }
         .fade-in { animation: fadeIn 0.35s ease; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-
         ::-webkit-scrollbar { width:4px; }
         ::-webkit-scrollbar-track { background:${T.bg}; }
         ::-webkit-scrollbar-thumb { background:${T.border}; border-radius:10px; }
         ::-webkit-scrollbar-thumb:hover { background:${T.red}; }
-
         .chip-btn { transition:all 0.15s; cursor:pointer; }
         .chip-btn:hover { border-color:${T.red} !important; color:${T.red} !important; }
         .icon-btn { transition:all 0.15s; opacity:0.4; background:transparent; border:none; cursor:pointer; }
@@ -212,8 +214,6 @@ export default function App() {
 
         {mobile ? <MobileNav nav={nav} /> : (
           <aside style={{ width:240, background:T.surface, borderLeft:`1px solid ${T.border}`, display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:`4px 0 24px rgba(0,0,0,0.6)`, position:'sticky', top:0, height:'100vh' }}>
-
-            {/* Logo */}
             <div style={{ padding:'8px 12px 24px', borderBottom:`1px solid ${T.border}`, marginBottom:20 }}>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <div style={{ width:36, height:36, borderRadius:10, background:`linear-gradient(135deg,${T.red},${T.redDark})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, boxShadow:`0 4px 12px rgba(229,57,53,0.4)` }}>
@@ -234,22 +234,23 @@ export default function App() {
             <nav style={{ display:'flex', flexDirection:'column', gap:3, flex:1, overflowY:'auto' }}>
               {nav.map(n => (
                 <NavLink key={n.path} to={n.path} end={n.path === '/'}
-                  className={({ isActive }) => `nav-link${isActive ? ' nav-link-active' : ''}`}
+                  className="nav-link"
                   style={({ isActive }) => ({
                     display:'flex', alignItems:'center', gap:12, padding:'11px 14px',
                     borderRadius:10, textDecoration:'none', fontSize:13, position:'relative', zIndex:1,
                     color: isActive ? '#fff' : T.muted,
                     fontWeight: isActive ? 700 : 400,
+                    background: isActive ? `linear-gradient(135deg,${T.red},${T.redDark})` : 'transparent',
+                    boxShadow: isActive ? `0 4px 12px rgba(229,57,53,0.3)` : 'none',
                   })}>
                   <span style={{ fontSize:16 }}>{n.icon}</span>
                   {n.label}
-                  {n.path === '/rentals' && <span style={{ marginRight:'auto', background:T.red, color:'#fff', fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:10 }}>NEW</span>}
                 </NavLink>
               ))}
             </nav>
 
             <button
-              style={{ background:'transparent', border:`1px solid ${T.border}`, color:T.muted, padding:'10px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s', marginTop:12, boxShadow:T.neo }}
+              style={{ background:'transparent', border:`1px solid ${T.border}`, color:T.muted, padding:'10px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s', marginTop:12 }}
               onMouseEnter={e => { e.target.style.borderColor=T.red; e.target.style.color=T.red }}
               onMouseLeave={e => { e.target.style.borderColor=T.border; e.target.style.color=T.muted }}
               onClick={() => supabase.auth.signOut()}>
