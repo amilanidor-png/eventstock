@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import Dashboard from './pages/Dashboard'
@@ -27,6 +27,79 @@ const NAV = [
   { path: '/team',       label: 'צוות',    icon: '👥' },
   { path: '/settings',   label: 'הגדרות',  icon: '⚙️' },
 ]
+
+const MOBILE_MAIN = ['/', '/rentals', '/inventory', '/customers']
+
+function MobileNav() {
+  const [showMore, setShowMore] = useState(false)
+  const location = useLocation()
+
+  const moreItems = NAV.filter(n => !MOBILE_MAIN.includes(n.path))
+
+  return (
+    <>
+      {/* תפריט "עוד" */}
+      {showMore && (
+        <div style={{ position:'fixed', bottom:65, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', zIndex:99, boxShadow:'0 -4px 20px rgba(0,0,0,0.1)', direction:'rtl' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', padding:'12px 8px' }}>
+            {moreItems.map(n => (
+              <NavLink key={n.path} to={n.path} end={n.path === '/'}
+                onClick={() => setShowMore(false)}
+                style={({ isActive }) => ({
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                  color: isActive ? '#6366f1' : '#64748b',
+                  textDecoration:'none', fontSize:11, fontWeight: isActive ? 700 : 400,
+                  padding:'10px 4px', borderRadius:10,
+                  background: isActive ? '#eef2ff' : 'transparent',
+                })}>
+                <span style={{ fontSize:22 }}>{n.icon}</span>
+                {n.label}
+              </NavLink>
+            ))}
+            <button onClick={() => { supabase.auth.signOut(); setShowMore(false) }}
+              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, background:'transparent', border:'none', color:'#ef4444', fontSize:11, cursor:'pointer', padding:'10px 4px', borderRadius:10 }}>
+              <span style={{ fontSize:22 }}>🚪</span>יציאה
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay לסגירה */}
+      {showMore && (
+        <div style={{ position:'fixed', inset:0, zIndex:98 }} onClick={() => setShowMore(false)} />
+      )}
+
+      {/* Bottom nav */}
+      <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-around', padding:'6px 0 8px', zIndex:100, boxShadow:'0 -4px 20px rgba(0,0,0,0.06)' }}>
+        {MOBILE_MAIN.map(path => {
+          const n = NAV.find(x => x.path === path)
+          return (
+            <NavLink key={n.path} to={n.path} end={n.path === '/'}
+              style={({ isActive }) => ({
+                display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                color: isActive ? '#6366f1' : '#94a3b8',
+                textDecoration:'none', fontSize:10, fontWeight: isActive ? 700 : 400,
+                padding:'4px 12px', borderRadius:8, transition:'all 0.2s'
+              })}>
+              <span style={{ fontSize:20 }}>{n.icon}</span>
+              {n.label}
+            </NavLink>
+          )
+        })}
+
+        {/* כפתור "עוד" */}
+        <button onClick={() => setShowMore(p => !p)}
+          style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none',
+            color: showMore ? '#6366f1' : '#94a3b8',
+            fontSize:10, cursor:'pointer', padding:'4px 12px', borderRadius:8, transition:'all 0.2s',
+            fontWeight: showMore ? 700 : 400 }}>
+          <span style={{ fontSize:20 }}>{showMore ? '✕' : '⋯'}</span>
+          עוד
+        </button>
+      </nav>
+    </>
+  )
+}
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -58,7 +131,6 @@ export default function App() {
     </div>
   )
 
-  // עמוד חתימת חוזה — ללא התחברות
   if (window.location.pathname.startsWith('/contract/')) {
     return (
       <BrowserRouter>
@@ -89,20 +161,7 @@ export default function App() {
       <div style={{ display:'flex', flexDirection: mobile ? 'column' : 'row', minHeight:'100vh', background:'#f8f9fb', fontFamily:'"Inter", "Segoe UI", sans-serif', direction:'rtl' }}>
 
         {mobile ? (
-          <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-around', padding:'6px 0 8px', zIndex:100, boxShadow:'0 -4px 20px rgba(0,0,0,0.06)' }}>
-            {NAV.slice(0,8).map(n => (
-              <NavLink key={n.path} to={n.path} end={n.path === '/'}
-                style={({ isActive }) => ({
-                  display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-                  color: isActive ? '#6366f1' : '#94a3b8',
-                  textDecoration:'none', fontSize:9, fontWeight: isActive ? 700 : 400,
-                  padding:'4px 4px', borderRadius:8, transition:'all 0.2s'
-                })}>
-                <span style={{ fontSize:15 }}>{n.icon}</span>
-                {n.label}
-              </NavLink>
-            ))}
-          </nav>
+          <MobileNav />
         ) : (
           <aside style={{ width:230, background:'#fff', borderLeft:'1px solid #e2e8f0', display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:'2px 0 12px rgba(0,0,0,0.04)' }}>
             <div style={{ padding:'4px 8px 20px', borderBottom:'1px solid #f1f5f9', marginBottom:16 }}>
