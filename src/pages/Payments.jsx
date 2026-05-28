@@ -7,22 +7,29 @@ const METHOD_BG    = { cash:'#ecfdf5', transfer:'#eef2ff', credit:'#fffbeb', che
 const EMPTY = { rental_id:'', amount:'', method:'cash', reference:'', notes:'', is_deposit:false }
 
 export default function Payments() {
-  const [payments, setPayments]   = useState([])
-  const [rentals, setRentals]     = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [modal, setModal]         = useState(false)
-  const [form, setForm]           = useState(EMPTY)
-  const [saving, setSaving]       = useState(false)
-  const [filterMethod, setFilter] = useState('all')
-  const [search, setSearch]       = useState('')
+  const [payments, setPayments]     = useState([])
+  const [rentals, setRentals]       = useState([])
+  const [summaries, setSummaries]   = useState({})
+  const [loading, setLoading]       = useState(true)
+  const [modal, setModal]           = useState(false)
+  const [form, setForm]             = useState(EMPTY)
+  const [saving, setSaving]         = useState(false)
+  const [filterMethod, setFilter]   = useState('all')
+  const [search, setSearch]         = useState('')
+  const [activeTab, setActiveTab]   = useState('payments') // 'payments' | 'summary'
 
   const load = async () => {
-    const [{ data: pays }, { data: rents }] = await Promise.all([
+    const [{ data: pays }, { data: rents }, { data: sums }] = await Promise.all([
       supabase.from('payments').select('*, rentals(id, start_date, end_date, customers(full_name))').order('paid_at', { ascending:false }),
-      supabase.from('rentals').select('id, start_date, end_date, customers(full_name)').not('status', 'eq', 'cancelled').order('start_date', { ascending:false }),
+      supabase.from('rentals').select('id, start_date, end_date, customers(full_name)').not('status','eq','cancelled').order('start_date', { ascending:false }),
+      supabase.from('rental_payment_summary').select('*'),
     ])
     setPayments(pays || [])
     setRentals(rents || [])
+    // מפה לפי rental_id
+    const map = {}
+    ;(sums || []).forEach(s => { map[s.rental_id] = s })
+    setSummaries(map)
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -30,7 +37,6 @@ export default function Payments() {
   const save = async () => {
     if (!form.rental_id || !form.amount) return alert('נא למלא הזמנה וסכום')
     setSaving(true)
-    const { data:{ user } } = await supabase.auth.getUser()
     await supabase.from('payments').insert({
       rental_id:  form.rental_id,
       amount:     +form.amount,
@@ -49,7 +55,8 @@ export default function Payments() {
   const del = async (id) => {
     if (!confirm('למחוק תשלום זה?')) return
     await supabase.from('payments').delete().eq('id', id)
-    setPayments(p => p.filter(p => p.id !== id))
+    setPayments(p => p.filter(x => x.id !== id))
+    await load()
   }
 
   const filtered = payments.filter(p => {
@@ -58,6 +65,14 @@ export default function Payments() {
   })
 
   const totalIncome = filtered.reduce((s, p) => s + +p.amount, 0)
+
+  // הזמנות עם יתרה
+  const rentalsWithBalance = rentals.map(r => ({
+    ...r,
+    summary: summaries[r.id] || { total_amount:0, paid:0, remaining:0 }
+  })).filter(r => r.summary.total_amount > 0)
+
+  const totalDebt = rentalsWithBalance.reduce((s, r) => s + Math.max(0, +r.summary.remaining), 0)
 
   if (loading) return (
     <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
@@ -93,13 +108,13 @@ export default function Payments() {
         </button>
       </div>
 
-      {/* סיכום */}
+      {/* KPI */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:24 }}>
         {[
-          { label:'סה״כ הכנסות', value:`₪${totalIncome.toLocaleString()}`, icon:'💰', color:'#10b981', bg:'#ecfdf5' },
+          { label:'סה״כ התקבל',  value:`₪${totalIncome.toLocaleString()}`,  icon:'💰', color:'#10b981', bg:'#ecfdf5' },
+          { label:'חוב פתוח',    value:`₪${totalDebt.toLocaleString()}`,     icon:'⏳', color:'#ef4444', bg:'#fef2f2' },
           { label:'מזומן',       value:`₪${filtered.filter(p=>p.method==='cash').reduce((s,p)=>s+ +p.amount,0).toLocaleString()}`,     icon:'💵', color:'#10b981', bg:'#ecfdf5' },
           { label:'העברה',       value:`₪${filtered.filter(p=>p.method==='transfer').reduce((s,p)=>s+ +p.amount,0).toLocaleString()}`, icon:'🏦', color:'#6366f1', bg:'#eef2ff' },
-          { label:'אשראי',       value:`₪${filtered.filter(p=>p.method==='credit').reduce((s,p)=>s+ +p.amount,0).toLocaleString()}`,   icon:'💳', color:'#f59e0b', bg:'#fffbeb' },
         ].map((s,i) => (
           <div key={i} style={{ background:s.bg, borderRadius:14, padding:'16px 20px', border:`1px solid ${s.color}33` }}>
             <div style={{ fontSize:22, marginBottom:8 }}>{s.icon}</div>
@@ -109,63 +124,138 @@ export default function Payments() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
-        <div style={{ position:'relative' }}>
-          <span style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }}>🔍</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="חיפוש לפי לקוח..."
-            style={{ background:'#fff', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'9px 36px 9px 14px', fontSize:13, outline:'none', width:200 }} />
-        </div>
-        {['all', ...Object.keys(METHOD_LABEL)].map(m => (
-          <button key={m} className="chip-btn" onClick={() => setFilter(m)}
-            style={{ padding:'7px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
-              borderColor: filterMethod===m ? '#6366f1' : '#e2e8f0',
-              background:  filterMethod===m ? '#eef2ff' : '#fff',
-              color:       filterMethod===m ? '#6366f1' : '#64748b',
-              fontWeight:  filterMethod===m ? 700 : 400 }}>
-            {m==='all' ? 'הכל' : METHOD_LABEL[m]}
+      {/* Tabs */}
+      <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+        {[
+          { key:'payments', label:'💳 היסטוריית תשלומים' },
+          { key:'summary',  label:'📊 שולם / יתרה לפי הזמנה' },
+        ].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            style={{ padding:'9px 18px', borderRadius:12, border:'1px solid', fontSize:13, cursor:'pointer',
+              borderColor: activeTab===t.key ? '#6366f1' : '#e2e8f0',
+              background:  activeTab===t.key ? '#eef2ff' : '#fff',
+              color:       activeTab===t.key ? '#6366f1' : '#64748b',
+              fontWeight:  activeTab===t.key ? 700 : 400 }}>
+            {t.label}
           </button>
         ))}
       </div>
 
-      {/* Table */}
-      <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
-        {filtered.length === 0
-          ? <div style={{ padding:'60px 0', textAlign:'center', color:'#94a3b8' }}>
-              <div style={{ fontSize:36, marginBottom:10 }}>💳</div>
-              <div>אין תשלומים</div>
-            </div>
-          : filtered.map((p, i) => (
-            <div key={p.id} className="pay-row"
-              style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom: i<filtered.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
-              <div style={{ display:'flex', gap:14, alignItems:'center' }}>
-                <div style={{ width:40, height:40, borderRadius:12, background:METHOD_BG[p.method], display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
-                  {p.method==='cash'?'💵':p.method==='transfer'?'🏦':p.method==='credit'?'💳':'📝'}
+      {activeTab === 'payments' && <>
+        {/* Filters */}
+        <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
+          <div style={{ position:'relative' }}>
+            <span style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }}>🔍</span>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="חיפוש לפי לקוח..."
+              style={{ background:'#fff', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'9px 36px 9px 14px', fontSize:13, outline:'none', width:200 }} />
+          </div>
+          {['all', ...Object.keys(METHOD_LABEL)].map(m => (
+            <button key={m} className="chip-btn" onClick={() => setFilter(m)}
+              style={{ padding:'7px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
+                borderColor: filterMethod===m ? '#6366f1' : '#e2e8f0',
+                background:  filterMethod===m ? '#eef2ff' : '#fff',
+                color:       filterMethod===m ? '#6366f1' : '#64748b',
+                fontWeight:  filterMethod===m ? 700 : 400 }}>
+              {m==='all' ? 'הכל' : METHOD_LABEL[m]}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+          {filtered.length === 0
+            ? <div style={{ padding:'60px 0', textAlign:'center', color:'#94a3b8' }}>
+                <div style={{ fontSize:36, marginBottom:10 }}>💳</div>
+                <div>אין תשלומים</div>
+              </div>
+            : filtered.map((p, i) => (
+              <div key={p.id} className="pay-row"
+                style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom: i<filtered.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
+                <div style={{ display:'flex', gap:14, alignItems:'center' }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:METHOD_BG[p.method], display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
+                    {p.method==='cash'?'💵':p.method==='transfer'?'🏦':p.method==='credit'?'💳':'📝'}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>
+                      {p.rentals?.customers?.full_name || '—'}
+                      {p.is_deposit && <span style={{ marginRight:8, fontSize:11, background:'#fef3c7', color:'#d97706', padding:'2px 8px', borderRadius:20, fontWeight:600 }}>מקדמה</span>}
+                    </div>
+                    <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>
+                      {new Date(p.paid_at).toLocaleDateString('he-IL')}
+                      {p.reference && ` · אסמכתה: ${p.reference}`}
+                    </div>
+                    {p.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{p.notes}</div>}
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>
-                    {p.rentals?.customers?.full_name || '—'}
-                    {p.is_deposit && <span style={{ marginRight:8, fontSize:11, background:'#fef3c7', color:'#d97706', padding:'2px 8px', borderRadius:20, fontWeight:600 }}>מקדמה</span>}
-                  </div>
-                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>
-                    {new Date(p.paid_at).toLocaleDateString('he-IL')}
-                    {p.reference && ` · אסמכתה: ${p.reference}`}
-                  </div>
-                  {p.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{p.notes}</div>}
+                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <span style={{ background:METHOD_BG[p.method], color:METHOD_COLOR[p.method], padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600 }}>
+                    {METHOD_LABEL[p.method]}
+                  </span>
+                  <span style={{ fontWeight:800, fontSize:16, color:'#10b981' }}>₪{(+p.amount).toLocaleString()}</span>
+                  <button className="icon-btn" onClick={() => del(p.id)}
+                    style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15 }}>🗑️</button>
                 </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <span style={{ background:METHOD_BG[p.method], color:METHOD_COLOR[p.method], padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:600, border:`1px solid ${METHOD_COLOR[p.method]}33` }}>
-                  {METHOD_LABEL[p.method]}
-                </span>
-                <span style={{ fontWeight:800, fontSize:16, color:'#10b981' }}>₪{(+p.amount).toLocaleString()}</span>
-                <button className="icon-btn" onClick={() => del(p.id)}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15 }}>🗑️</button>
-              </div>
-            </div>
-          ))
-        }
-      </div>
+            ))
+          }
+        </div>
+      </>}
+
+      {activeTab === 'summary' && (
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+          <div style={{ padding:'14px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between' }}>
+            <span style={{ fontWeight:700, fontSize:14, color:'#1e293b' }}>📊 מצב תשלומים לפי הזמנה</span>
+            <span style={{ fontSize:13, color:'#94a3b8' }}>{rentalsWithBalance.length} הזמנות</span>
+          </div>
+          {rentalsWithBalance.length === 0
+            ? <div style={{ padding:'60px 0', textAlign:'center', color:'#94a3b8' }}>אין הזמנות עם נתוני תשלום</div>
+            : rentalsWithBalance.map((r, i) => {
+              const s        = r.summary
+              const total    = +s.total_amount || 0
+              const paid     = +s.paid || 0
+              const remaining = +s.remaining || 0
+              const pct      = total > 0 ? Math.min(100, (paid/total)*100) : 0
+              const isFullyPaid = remaining <= 0
+
+              return (
+                <div key={r.id} className="pay-row"
+                  style={{ padding:'16px 24px', borderBottom: i<rentalsWithBalance.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.04}s both` }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+                    <div>
+                      <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
+                      <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{r.start_date} → {r.end_date}</div>
+                    </div>
+                    <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                      <span style={{ fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:20,
+                        background: isFullyPaid ? '#ecfdf5' : '#fef2f2',
+                        color:      isFullyPaid ? '#10b981' : '#ef4444' }}>
+                        {isFullyPaid ? '✅ שולם במלואו' : `⏳ יתרה: ₪${remaining.toLocaleString()}`}
+                      </span>
+                      {!isFullyPaid && (
+                        <button onClick={() => { setForm({ ...EMPTY, rental_id: r.id, amount: String(remaining) }); setModal(true) }}
+                          style={{ background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:8, cursor:'pointer' }}>
+                          + רשום תשלום
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* progress bar */}
+                  <div style={{ display:'flex', gap:12, alignItems:'center' }}>
+                    <div style={{ flex:1, height:8, background:'#f1f5f9', borderRadius:10 }}>
+                      <div style={{ height:'100%', width:`${pct}%`, background: isFullyPaid ? '#10b981' : 'linear-gradient(90deg,#6366f1,#8b5cf6)', borderRadius:10, transition:'width 0.5s ease' }} />
+                    </div>
+                    <div style={{ fontSize:12, color:'#64748b', flexShrink:0, minWidth:160, textAlign:'left' }}>
+                      <span style={{ color:'#10b981', fontWeight:700 }}>₪{paid.toLocaleString()}</span>
+                      <span style={{ color:'#94a3b8' }}> / ₪{total.toLocaleString()}</span>
+                      <span style={{ color:'#94a3b8' }}> ({Math.round(pct)}%)</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          }
+        </div>
+      )}
 
       {/* Modal */}
       {modal && (
@@ -180,10 +270,20 @@ export default function Payments() {
                 {rentals.map(r => (
                   <option key={r.id} value={r.id}>
                     {r.customers?.full_name} — {r.start_date} עד {r.end_date}
+                    {summaries[r.id] ? ` | יתרה: ₪${Math.max(0,+summaries[r.id].remaining).toLocaleString()}` : ''}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* הצגת יתרה */}
+            {form.rental_id && summaries[form.rental_id] && (
+              <div style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px', marginBottom:14, display:'flex', justifyContent:'space-between' }}>
+                <span style={{ fontSize:13, color:'#64748b' }}>שולם: <strong style={{ color:'#10b981' }}>₪{(+summaries[form.rental_id].paid).toLocaleString()}</strong></span>
+                <span style={{ fontSize:13, color:'#64748b' }}>יתרה: <strong style={{ color: +summaries[form.rental_id].remaining > 0 ? '#ef4444' : '#10b981' }}>₪{Math.max(0,+summaries[form.rental_id].remaining).toLocaleString()}</strong></span>
+                <span style={{ fontSize:13, color:'#64748b' }}>סה״כ: <strong>₪{(+summaries[form.rental_id].total_amount).toLocaleString()}</strong></span>
+              </div>
+            )}
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
               <div>
