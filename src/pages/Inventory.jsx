@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 
 const CONDS      = { excellent:'מצוין', good:'טוב', fair:'בינוני', maintenance:'תחזוקה' }
 const COND_COLOR = { excellent:'#10b981', good:'#f59e0b', fair:'#f97316', maintenance:'#ef4444' }
 const COND_BG    = { excellent:'#ecfdf5', good:'#fffbeb', fair:'#fff7ed', maintenance:'#fef2f2' }
-const EMPTY      = { name:'', category_id:'', description:'', daily_rate:'', quantity_total:'', condition:'excellent', notes:'' }
+const EMPTY      = { name:'', category_id:'', description:'', daily_rate:'', quantity_total:'', condition:'excellent', notes:'', image_url:'' }
 
 export default function Inventory() {
   const [items, setItems]         = useState([])
@@ -13,8 +13,10 @@ export default function Inventory() {
   const [modal, setModal]         = useState(false)
   const [form, setForm]           = useState(EMPTY)
   const [saving, setSaving]       = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState('all')
+  const fileRef                   = useRef(null)
 
   const load = async () => {
     const [{ data: eq }, { data: categories }] = await Promise.all([
@@ -27,9 +29,28 @@ export default function Inventory() {
   }
   useEffect(() => { load() }, [])
 
+  const uploadImage = async (file) => {
+    if (!file) return null
+    setUploading(true)
+    const ext  = file.name.split('.').pop()
+    const path = `${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('equipment-images').upload(path, file)
+    if (error) { alert('שגיאה בהעלאת תמונה'); setUploading(false); return null }
+    const { data } = supabase.storage.from('equipment-images').getPublicUrl(path)
+    setUploading(false)
+    return data.publicUrl
+  }
+
   const save = async () => {
     if (!form.name || !form.daily_rate || !form.quantity_total) return alert('נא למלא שדות חובה')
     setSaving(true)
+
+    let image_url = form.image_url
+    if (fileRef.current?.files[0]) {
+      image_url = await uploadImage(fileRef.current.files[0])
+      if (!image_url) { setSaving(false); return }
+    }
+
     const payload = {
       name:           form.name,
       category_id:    form.category_id || null,
@@ -38,12 +59,14 @@ export default function Inventory() {
       quantity_total: +form.quantity_total,
       condition:      form.condition,
       notes:          form.notes,
+      image_url,
     }
     if (form.id) await supabase.from('equipment').update(payload).eq('id', form.id)
     else         await supabase.from('equipment').insert(payload)
     await load()
     setModal(false)
     setForm(EMPTY)
+    if (fileRef.current) fileRef.current.value = ''
     setSaving(false)
   }
 
@@ -103,9 +126,7 @@ export default function Inventory() {
             borderColor: catFilter==='all' ? '#6366f1' : '#e2e8f0',
             background:  catFilter==='all' ? '#eef2ff' : '#fff',
             color:       catFilter==='all' ? '#6366f1' : '#64748b',
-            fontWeight:  catFilter==='all' ? 700 : 400 }}>
-          הכל
-        </button>
+            fontWeight:  catFilter==='all' ? 700 : 400 }}>הכל</button>
         {cats.map(c => (
           <button key={c.id} className="chip-btn" onClick={() => setCatFilter(c.id)}
             style={{ padding:'8px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
@@ -122,28 +143,43 @@ export default function Inventory() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:16 }}>
         {filtered.map((item, i) => (
           <div key={item.id} className="inv-card"
-            style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', padding:20, boxShadow:'0 1px 4px rgba(0,0,0,0.04)', animation:`fadeUp 0.3s ease ${i*0.04}s both` }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
-              <span style={{ background:COND_BG[item.condition], color:COND_COLOR[item.condition], fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:20, border:`1px solid ${COND_COLOR[item.condition]}33` }}>
+            style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', animation:`fadeUp 0.3s ease ${i*0.04}s both` }}>
+
+            {/* תמונה */}
+            <div style={{ height:160, background:'#f8fafc', overflow:'hidden', position:'relative' }}>
+              {item.image_url
+                ? <img src={item.image_url} alt={item.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:6 }}>
+                    <span style={{ fontSize:40 }}>{item.equipment_categories?.icon || '📦'}</span>
+                    <span style={{ fontSize:11, color:'#cbd5e1' }}>אין תמונה</span>
+                  </div>
+              }
+              <span style={{ position:'absolute', top:10, right:10, background:COND_BG[item.condition], color:COND_COLOR[item.condition], fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:20, border:`1px solid ${COND_COLOR[item.condition]}33` }}>
                 {CONDS[item.condition]}
               </span>
-              <div style={{ display:'flex', gap:6 }}>
-                <button className="icon-btn"
-                  onClick={() => { setForm({ ...item, category_id: item.category_id || '' }); setModal(true) }}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>✏️</button>
-                <button className="icon-btn" onClick={() => del(item.id)}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>🗑️</button>
+            </div>
+
+            <div style={{ padding:16 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+                <div>
+                  <div style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>{item.name}</div>
+                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>
+                    {item.equipment_categories?.icon} {item.equipment_categories?.name || '—'}
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:4 }}>
+                  <button className="icon-btn" onClick={() => { setForm({ ...item, category_id: item.category_id || '' }); setModal(true) }}
+                    style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>✏️</button>
+                  <button className="icon-btn" onClick={() => del(item.id)}
+                    style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:15, padding:4 }}>🗑️</button>
+                </div>
               </div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:10, borderTop:'1px solid #f8fafc' }}>
+                <span style={{ fontSize:15, fontWeight:700, color:'#6366f1' }}>₪{item.daily_rate}<span style={{ fontSize:11, fontWeight:400, color:'#94a3b8' }}>/יום</span></span>
+                <span style={{ fontSize:12, color:'#64748b', background:'#f8fafc', padding:'3px 10px', borderRadius:20 }}>כמות: {item.quantity_total}</span>
+              </div>
+              {item.notes && <div style={{ fontSize:12, color:'#94a3b8', marginTop:8 }}>{item.notes}</div>}
             </div>
-            <div style={{ fontSize:16, fontWeight:700, color:'#0f172a', marginBottom:4 }}>{item.name}</div>
-            <div style={{ fontSize:12, color:'#94a3b8', marginBottom:14 }}>
-              {item.equipment_categories?.icon} {item.equipment_categories?.name || '—'}
-            </div>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:14, borderTop:'1px solid #f8fafc' }}>
-              <span style={{ fontSize:15, fontWeight:700, color:'#6366f1' }}>₪{item.daily_rate}<span style={{ fontSize:11, fontWeight:400, color:'#94a3b8' }}>/יום</span></span>
-              <span style={{ fontSize:12, color:'#64748b', background:'#f8fafc', padding:'3px 10px', borderRadius:20 }}>כמות: {item.quantity_total}</span>
-            </div>
-            {item.notes && <div style={{ fontSize:12, color:'#94a3b8', marginTop:10, paddingTop:10, borderTop:'1px solid #f8fafc' }}>{item.notes}</div>}
           </div>
         ))}
       </div>
@@ -160,6 +196,30 @@ export default function Inventory() {
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
           <div style={{ background:'#fff', borderRadius:20, padding:32, width:440, maxHeight:'90vh', overflowY:'auto', direction:'rtl', boxShadow:'0 24px 60px rgba(0,0,0,0.15)', animation:'fadeUp 0.25s ease' }}>
             <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>{form.id ? '✏️ עריכת פריט' : '➕ פריט חדש'}</h2>
+
+            {/* תמונה */}
+            <div style={{ marginBottom:16 }}>
+              <label style={lbl}>תמונה</label>
+              {form.image_url && (
+                <div style={{ marginBottom:8, borderRadius:10, overflow:'hidden', height:120 }}>
+                  <img src={form.image_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                </div>
+              )}
+              <div onClick={() => fileRef.current?.click()}
+                style={{ border:'2px dashed #e2e8f0', borderRadius:10, padding:'16px', textAlign:'center', cursor:'pointer', transition:'all 0.2s', background:'#f8fafc' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='#6366f1'; e.currentTarget.style.background='#eef2ff' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e8f0'; e.currentTarget.style.background='#f8fafc' }}>
+                {uploading
+                  ? <span style={{ color:'#6366f1', fontSize:13 }}>⏳ מעלה תמונה...</span>
+                  : <span style={{ color:'#94a3b8', fontSize:13 }}>📷 לחץ להעלאת תמונה</span>
+                }
+              </div>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }}
+                onChange={e => {
+                  const f = e.target.files[0]
+                  if (f) setForm(p => ({ ...p, _previewFile: f, image_url: URL.createObjectURL(f) }))
+                }} />
+            </div>
 
             {[
               { label:'שם הפריט *',      key:'name',           type:'text',   placeholder:'לדוגמה: מערכת שמע' },
@@ -196,11 +256,11 @@ export default function Inventory() {
             </div>
 
             <div style={{ display:'flex', gap:10, marginTop:24 }}>
-              <button onClick={save} disabled={saving}
+              <button onClick={save} disabled={saving || uploading}
                 style={{ flex:1, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'12px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
-                {saving ? 'שומר...' : 'שמור'}
+                {saving ? 'שומר...' : uploading ? 'מעלה תמונה...' : 'שמור'}
               </button>
-              <button onClick={() => setModal(false)}
+              <button onClick={() => { setModal(false); if (fileRef.current) fileRef.current.value = '' }}
                 style={{ flex:1, background:'#f8fafc', border:'1px solid #e2e8f0', color:'#64748b', fontWeight:600, padding:'12px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
                 ביטול
               </button>
