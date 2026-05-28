@@ -61,13 +61,27 @@ export default function Rentals() {
   }, [])
 
   const calcTotal = () => {
-    if (!form.start_date || !form.end_date) return 0
-    const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
-    const itemsTotal = lines.reduce((s,l) => {
-      const eq = equipment.find(e => e.id === l.equipment_id)
-      return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
-    }, 0)
-    return itemsTotal + +form.delivery_price - +form.discount
+    const calcVAT = () => {
+  if (!form.start_date || !form.end_date) return 0
+  const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
+  const itemsTotal = lines.reduce((s,l) => {
+    const eq = equipment.find(e => e.id === l.equipment_id)
+    return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
+  }, 0)
+  const subtotal = itemsTotal + +form.delivery_price - +form.discount
+  return subtotal * 0.18
+}
+
+const calcTotal = () => {
+  if (!form.start_date || !form.end_date) return 0
+  const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
+  const itemsTotal = lines.reduce((s,l) => {
+    const eq = equipment.find(e => e.id === l.equipment_id)
+    return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
+  }, 0)
+  const subtotal = itemsTotal + +form.delivery_price - +form.discount
+  return subtotal * 1.18
+}
   }
 
   const save = async () => {
@@ -316,6 +330,10 @@ export default function Rentals() {
                     <span>-₪{(+form.discount).toLocaleString()}</span>
                   </div>
                 )}
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#f59e0b' }}>
+  <span>🧾 מע"מ 18%</span>
+  <span>₪{calcVAT().toFixed(2)}</span>
+</div>
               </div>
               <div style={{ textAlign:'center', borderTop:'1px solid #c7d2fe', paddingTop:10 }}>
                 <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום</div>
