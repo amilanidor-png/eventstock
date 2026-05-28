@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
+const T = {
+  bg:'#0d0d0d', surface:'#161616', card:'#1a1a1a', border:'#2a2a2a',
+  red:'#e53935', redDark:'#b71c1c', redGlow:'rgba(229,57,53,0.18)',
+  text:'#f0f0f0', muted:'#888',
+  neo:'inset 2px 2px 5px rgba(0,0,0,0.6), inset -2px -2px 5px rgba(255,255,255,0.04)',
+  neoOut:'4px 4px 10px rgba(0,0,0,0.6), -2px -2px 6px rgba(255,255,255,0.03)',
+}
+
 const STATUS_LABEL = { draft:'טיוטה', confirmed:'מאושר', active:'פעיל', returned:'הוחזר', cancelled:'בוטל' }
-const STATUS_COLOR = { draft:'#94a3b8', confirmed:'#f59e0b', active:'#10b981', returned:'#8b5cf6', cancelled:'#ef4444' }
-const STATUS_BG    = { draft:'#f8fafc', confirmed:'#fffbeb', active:'#ecfdf5', returned:'#f5f3ff', cancelled:'#fef2f2' }
+const STATUS_COLOR = { draft:'#555', confirmed:'#f59e0b', active:'#10b981', returned:'#8b5cf6', cancelled:T.red }
 const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', rental_days:1, pickup_type:'pickup', delivery_address:'', delivery_price:'0', assembly_price:'0', discount:'0', deposit_amount:'0', notes:'' }
 const DAY_PRESETS  = [1, 2, 3, 7]
+
+const inp = { width:'100%', background:'#111', border:`1px solid #333`, color:T.text, borderRadius:10, padding:'11px 14px', fontSize:14, outline:'none', boxSizing:'border-box', transition:'all 0.2s' }
+const lbl = { display:'block', fontSize:11, fontWeight:700, color:T.muted, marginBottom:6, letterSpacing:1.5, textTransform:'uppercase' }
 
 export default function Rentals() {
   const [rentals, setRentals]           = useState([])
@@ -28,84 +38,48 @@ export default function Rentals() {
       supabase.from('customers').select('id, full_name').order('full_name'),
       supabase.from('equipment').select('id, name, daily_rate, quantity_total').eq('is_active', true).order('name'),
     ])
-    setRentals(r || [])
-    setCustomers(c || [])
-    setEquipment(e || [])
+    setRentals(r||[]); setCustomers(c||[]); setEquipment(e||[])
     setLoading(false)
   }
   useEffect(() => { load() }, [])
 
-  // בדיקת זמינות לפי תאריכים בלבד
   useEffect(() => {
     if (!form.start_date || !form.end_date || !modal) return
     const check = async () => {
       setAvailLoading(true)
       const results = {}
       for (const eq of equipment) {
-        const { data, error } = await supabase.rpc('get_available_quantity', {
-          p_equipment_id:      eq.id,
-          p_start_date:        form.start_date,
-          p_end_date:          form.end_date,
-          p_exclude_rental_id: editId || null,
-        })
+        const { data, error } = await supabase.rpc('get_available_quantity', { p_equipment_id:eq.id, p_start_date:form.start_date, p_end_date:form.end_date, p_exclude_rental_id:editId||null })
         results[eq.id] = error ? eq.quantity_total : data
       }
-      setAvailability(results)
-      setAvailLoading(false)
+      setAvailability(results); setAvailLoading(false)
     }
     check()
   }, [form.start_date, form.end_date, modal])
 
-  const openNew = () => {
-    setEditId(null)
-    setForm(EMPTY_FORM)
-    setLines([{ equipment_id:'', quantity:1 }])
-    setAvailability({})
-    setEquipSearch('')
-    setModal(true)
-  }
+  const openNew = () => { setEditId(null); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setEquipSearch(''); setModal(true) }
 
   const openEdit = async (r) => {
     setEditId(r.id)
-    setForm({
-      customer_id:      r.customer_id,
-      start_date:       r.start_date,
-      end_date:         r.end_date,
-      rental_days:      r.rental_days || 1,
-      pickup_type:      r.pickup_type,
-      delivery_address: r.delivery_address || '',
-      delivery_price:   String(r.delivery_price || 0),
-      assembly_price:   String(r.assembly_price || 0),
-      discount:         String(r.discount || 0),
-      deposit_amount:   String(r.deposit_amount || 0),
-      notes:            r.notes || '',
-    })
+    setForm({ customer_id:r.customer_id, start_date:r.start_date||'', end_date:r.end_date||'', rental_days:r.rental_days||1, pickup_type:r.pickup_type, delivery_address:r.delivery_address||'', delivery_price:String(r.delivery_price||0), assembly_price:String(r.assembly_price||0), discount:String(r.discount||0), deposit_amount:String(r.deposit_amount||0), notes:r.notes||'' })
     const { data: items } = await supabase.from('rental_items').select('equipment_id, quantity').eq('rental_id', r.id)
     setLines(items?.length ? items : [{ equipment_id:'', quantity:1 }])
-    setAvailability({})
-    setEquipSearch('')
-    setModal(true)
+    setAvailability({}); setEquipSearch(''); setModal(true)
   }
 
   const addLine    = () => setLines(p => [...p, { equipment_id:'', quantity:1 }])
   const removeLine = i  => setLines(p => p.filter((_,idx) => idx !== i))
   const updateLine = (i,k,v) => setLines(p => p.map((l,idx) => idx===i ? {...l,[k]:v} : l))
 
-  const checkConflicts = () => lines.filter(l => l.equipment_id).reduce((arr, l) => {
-    const eq = equipment.find(e => e.id === l.equipment_id)
-    const av = availability[l.equipment_id]
-    if (av !== undefined && +l.quantity > av) arr.push(`❌ ${eq.name}: ביקשת ${l.quantity}, זמין רק ${av}`)
+  const checkConflicts = () => lines.filter(l=>l.equipment_id).reduce((arr,l) => {
+    const eq=equipment.find(e=>e.id===l.equipment_id); const av=availability[l.equipment_id]
+    if (av!==undefined && +l.quantity>av) arr.push(`❌ ${eq.name}: ביקשת ${l.quantity}, זמין רק ${av}`)
     return arr
   }, [])
 
-  // חישוב לפי rental_days — לא לפי תאריכים
   const calcSubtotal = () => {
-    const days = +form.rental_days || 1
-    const itemsTotal = lines.reduce((s,l) => {
-      const eq = equipment.find(e => e.id === l.equipment_id)
-      return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
-    }, 0)
-    return itemsTotal + +form.delivery_price + +form.assembly_price - +form.discount
+    const days = +form.rental_days||1
+    return lines.reduce((s,l) => { const eq=equipment.find(e=>e.id===l.equipment_id); return s+(eq?eq.daily_rate*+l.quantity*days:0) }, 0) + +form.delivery_price + +form.assembly_price - +form.discount
   }
   const calcVAT   = () => calcSubtotal() * 0.18
   const calcTotal = () => calcSubtotal() * 1.18
@@ -113,39 +87,24 @@ export default function Rentals() {
   const save = async () => {
     if (!form.customer_id) return alert('נא לבחור לקוח')
     const conflicts = checkConflicts()
-    if (conflicts.length > 0) return alert('⚠️ אין מספיק ציוד זמין:\n\n' + conflicts.join('\n'))
+    if (conflicts.length) return alert('⚠️ אין מספיק ציוד:\n\n' + conflicts.join('\n'))
     setSaving(true)
-    const payload = {
-      ...form,
-      rental_days:    +form.rental_days || 1,
-      discount:       +form.discount,
-      deposit_amount: +form.deposit_amount,
-      delivery_price: +form.delivery_price,
-      assembly_price: +form.assembly_price,
-    }
+    const payload = { ...form, rental_days:+form.rental_days||1, discount:+form.discount, deposit_amount:+form.deposit_amount, delivery_price:+form.delivery_price, assembly_price:+form.assembly_price }
     if (editId) {
       await supabase.from('rentals').update(payload).eq('id', editId)
       await supabase.from('rental_items').delete().eq('rental_id', editId)
-      for (const l of lines.filter(l => l.equipment_id)) {
-        const eq = equipment.find(e => e.id === l.equipment_id)
-        await supabase.from('rental_items').insert({ rental_id:editId, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
-      }
+      for (const l of lines.filter(l=>l.equipment_id)) { const eq=equipment.find(e=>e.id===l.equipment_id); await supabase.from('rental_items').insert({ rental_id:editId, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate }) }
     } else {
       const { data:{ user } } = await supabase.auth.getUser()
       const { data:rental, error } = await supabase.from('rentals').insert({ ...payload, created_by:user.id }).select().single()
-      if (error) { alert('שגיאה: ' + error.message); setSaving(false); return }
-      for (const l of lines.filter(l => l.equipment_id)) {
-        const eq = equipment.find(e => e.id === l.equipment_id)
-        await supabase.from('rental_items').insert({ rental_id:rental.id, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
-      }
+      if (error) { alert('שגיאה: '+error.message); setSaving(false); return }
+      for (const l of lines.filter(l=>l.equipment_id)) { const eq=equipment.find(e=>e.id===l.equipment_id); await supabase.from('rental_items').insert({ rental_id:rental.id, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate }) }
     }
-    await load()
-    setModal(false); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setEditId(null); setSaving(false)
+    await load(); setModal(false); setForm(EMPTY_FORM); setLines([{ equipment_id:'', quantity:1 }]); setAvailability({}); setEditId(null); setSaving(false)
   }
 
   const shareWhatsApp = (r) => {
-    const customer = r.customers?.full_name || 'לקוח'
-    const msg = `שלום ${customer} 👋\n\n*אוורסט - השכרת ציוד אירועים*\n————————————————\n📅 *תאריכים:* ${r.start_date || '—'} עד ${r.end_date || '—'}\n🗓️ *ימי השכרה:* ${r.rental_days || 1}\n${r.pickup_type === 'delivery' ? `🚚 *משלוח לכתובת:* ${r.delivery_address || '—'}` : '📦 *איסוף עצמי*'}\n${r.notes ? `📝 *הערות:* ${r.notes}` : ''}\n————————————————\nתודה שבחרת באוורסט! 🏔️`
+    const msg = `שלום ${r.customers?.full_name||'לקוח'} 👋\n\n*אוורסט - השכרת ציוד*\n📅 ${r.start_date||'—'} עד ${r.end_date||'—'}\n🗓️ ${r.rental_days||1} ימים\n${r.pickup_type==='delivery'?`🚚 משלוח: ${r.delivery_address||'—'}`:'📦 איסוף עצמי'}\n${r.notes?`📝 ${r.notes}`:''}\n\nתודה! 🏔️`
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
@@ -164,37 +123,38 @@ export default function Rentals() {
   const filteredEquip = equipment.filter(e => e.name.includes(equipSearch))
 
   if (loading) return (
-    <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
-      <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
+    <div style={{ display:'flex', justifyContent:'center', padding:80 }}>
+      <div style={{ width:36, height:36, border:`3px solid ${T.border}`, borderTop:`3px solid ${T.red}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
   return (
-    <div style={{ direction:'rtl' }}>
+    <div style={{ direction:'rtl', color:T.text }}>
       <style>{`
-        @keyframes spin { to { transform:rotate(360deg) } }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
-        .rent-row { transition: background 0.15s; }
-        .rent-row:hover { background: #f8fafc !important; }
-        .chip-btn { transition: all 0.15s; }
-        .chip-btn:hover { background: #eef2ff !important; color: #6366f1 !important; }
-        .icon-btn { transition: all 0.15s; opacity:0.5; }
-        .icon-btn:hover { opacity:1; transform:scale(1.1); }
-        .day-btn { transition: all 0.15s; cursor:pointer; border-radius:8px; padding:6px 14px; border:1px solid; font-size:13px; font-weight:600; }
-        .day-btn:hover { transform: translateY(-1px); }
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        .rent-row{transition:background 0.15s;}
+        .rent-row:hover{background:rgba(229,57,53,0.05)!important;}
+        .chip{transition:all 0.15s;cursor:pointer;}
+        .chip:hover{border-color:${T.red}!important;color:${T.red}!important;}
+        .icon-btn{transition:all 0.15s;opacity:0.4;background:transparent;border:none;cursor:pointer;font-size:15px;padding:4px;}
+        .icon-btn:hover{opacity:1;transform:scale(1.2);}
+        .day-btn{transition:all 0.2s;cursor:pointer;border-radius:8px;padding:7px 14px;border:1px solid;font-size:13px;font-weight:700;}
+        .day-btn:hover{transform:translateY(-1px);}
+        .neo-input:focus{border-color:${T.red}!important;}
       `}</style>
 
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
         <div>
-          <h1 style={{ fontSize:26, fontWeight:800, color:'#0f172a', letterSpacing:'-0.5px' }}>השכרות</h1>
-          <p style={{ color:'#94a3b8', fontSize:13, marginTop:3 }}>{rentals.length} השכרות בסך הכל</p>
+          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:4 }}>
+            <div style={{ width:4, height:28, background:`linear-gradient(${T.red},${T.redDark})`, borderRadius:4 }} />
+            <h1 style={{ fontSize:26, fontWeight:900, color:T.text, letterSpacing:1 }}>השכרות</h1>
+          </div>
+          <p style={{ color:T.muted, fontSize:13, paddingRight:16 }}>{rentals.length} השכרות בסך הכל</p>
         </div>
-        <button onClick={openNew}
-          style={{ background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'10px 20px', borderRadius:12, cursor:'pointer', fontSize:14, boxShadow:'0 4px 12px rgba(99,102,241,0.25)', transition:'all 0.2s' }}
-          onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
-          onMouseLeave={e => e.currentTarget.style.transform='translateY(0)'}>
+        <button className="neo-btn" onClick={openNew} style={{ padding:'11px 22px', fontSize:14, borderRadius:12 }}>
           + השכרה חדשה
         </button>
       </div>
@@ -202,53 +162,50 @@ export default function Rentals() {
       {/* Filters */}
       <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' }}>
         {['all', ...Object.keys(STATUS_LABEL)].map(st => (
-          <button key={st} className="chip-btn" onClick={() => setFilter(st)}
-            style={{ padding:'7px 16px', borderRadius:20, border:'1px solid', fontSize:13, cursor:'pointer',
-              borderColor: filterStatus===st ? '#6366f1' : '#e2e8f0',
-              background:  filterStatus===st ? '#eef2ff' : '#fff',
-              color:       filterStatus===st ? '#6366f1' : '#64748b',
-              fontWeight:  filterStatus===st ? 700 : 400 }}>
-            {st==='all' ? 'הכל' : STATUS_LABEL[st]}
+          <button key={st} className="chip"
+            onClick={() => setFilter(st)}
+            style={{ padding:'7px 16px', borderRadius:20, border:'1px solid', fontSize:12, fontWeight:600,
+              borderColor: filterStatus===st ? T.red : T.border,
+              background:  filterStatus===st ? T.redGlow : T.card,
+              color:       filterStatus===st ? T.red : T.muted,
+              boxShadow:   filterStatus===st ? `0 0 10px ${T.redGlow}` : T.neoOut }}>
+            {st==='all'?'הכל':STATUS_LABEL[st]}
           </button>
         ))}
       </div>
 
       {/* Table */}
-      <div style={{ background:'#fff', borderRadius:16, border:'1px solid #f1f5f9', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden' }}>
+      <div style={{ background:T.card, borderRadius:16, border:`1px solid ${T.border}`, boxShadow:T.neoOut, overflow:'hidden' }}>
         {filtered.length === 0
-          ? <div style={{ padding:'60px 0', textAlign:'center', color:'#94a3b8' }}>
-              <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
-              <div>אין השכרות</div>
+          ? <div style={{ padding:'60px 0', textAlign:'center', color:T.muted }}>
+              <div style={{ fontSize:36, marginBottom:10, opacity:0.3 }}>📋</div>
+              <div style={{ letterSpacing:1 }}>אין השכרות</div>
             </div>
-          : filtered.map((r, i) => (
+          : filtered.map((r,i) => (
             <div key={r.id} className="rent-row"
-              style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom: i<filtered.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
+              style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 22px', borderBottom: i<filtered.length-1 ? `1px solid ${T.border}` : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
               <div style={{ display:'flex', gap:14, alignItems:'center', flex:1 }}>
-                <div style={{ width:40, height:40, borderRadius:12, background:'#eef2ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
-                  {r.pickup_type === 'delivery' ? '🚚' : '📋'}
+                <div style={{ width:40, height:40, borderRadius:12, background:T.surface, border:`1px solid ${T.border}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
+                  {r.pickup_type==='delivery'?'🚚':'📋'}
                 </div>
                 <div>
-                  <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
-                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2, display:'flex', gap:8, flexWrap:'wrap' }}>
+                  <div style={{ fontWeight:700, fontSize:14, color:T.text }}>{r.customers?.full_name||'—'}</div>
+                  <div style={{ fontSize:11, color:T.muted, marginTop:3, display:'flex', gap:8, flexWrap:'wrap' }}>
                     {r.start_date && <span>{r.start_date} → {r.end_date}</span>}
-                    <span style={{ color:'#6366f1', fontWeight:600 }}>🗓️ {r.rental_days || 1} יום</span>
-                    {r.delivery_price > 0 && <span style={{ color:'#8b5cf6', fontWeight:600 }}>🚚 ₪{r.delivery_price}</span>}
-                    {r.assembly_price > 0 && <span style={{ color:'#10b981', fontWeight:600 }}>🔨 ₪{r.assembly_price}</span>}
+                    <span style={{ color:T.red, fontWeight:700 }}>🗓️ {r.rental_days||1}י</span>
+                    {r.delivery_price>0 && <span style={{ color:'#8b5cf6' }}>🚚 ₪{r.delivery_price}</span>}
+                    {r.assembly_price>0 && <span style={{ color:'#10b981' }}>🔨 ₪{r.assembly_price}</span>}
                   </div>
-                  {r.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{r.notes}</div>}
                 </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <select value={r.status} onChange={e => updateStatus(r.id, e.target.value)}
-                  style={{ background:STATUS_BG[r.status], color:STATUS_COLOR[r.status], border:`1px solid ${STATUS_COLOR[r.status]}33`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
+                  style={{ background:`${STATUS_COLOR[r.status]}18`, color:STATUS_COLOR[r.status], border:`1px solid ${STATUS_COLOR[r.status]}44`, borderRadius:20, padding:'5px 12px', fontSize:11, fontWeight:700, cursor:'pointer', outline:'none' }}>
                   {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-                <button className="icon-btn" onClick={() => shareWhatsApp(r)}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>📱</button>
-                <button className="icon-btn" onClick={() => openEdit(r)}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>✏️</button>
-                <button className="icon-btn" onClick={() => del(r.id)}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>🗑️</button>
+                <button className="icon-btn" onClick={() => shareWhatsApp(r)} title="WhatsApp">📱</button>
+                <button className="icon-btn" onClick={() => openEdit(r)}>✏️</button>
+                <button className="icon-btn" onClick={() => del(r.id)}>🗑️</button>
               </div>
             </div>
           ))
@@ -257,16 +214,18 @@ export default function Rentals() {
 
       {/* Modal */}
       {modal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
-          <div style={{ background:'#fff', borderRadius:20, padding:32, width:500, maxHeight:'90vh', overflowY:'auto', direction:'rtl', boxShadow:'0 24px 60px rgba(0,0,0,0.15)', animation:'fadeUp 0.25s ease' }}>
-            <h2 style={{ margin:'0 0 24px', fontSize:18, fontWeight:800, color:'#0f172a' }}>
-              {editId ? '✏️ עריכת השכרה' : '📋 השכרה חדשה'}
-            </h2>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(8px)' }}>
+          <div style={{ background:T.surface, borderRadius:20, padding:32, width:500, maxHeight:'90vh', overflowY:'auto', direction:'rtl', boxShadow:`0 24px 60px rgba(0,0,0,0.9), 0 0 40px ${T.redGlow}`, border:`1px solid ${T.border}`, animation:'fadeUp 0.25s ease' }}>
 
-            {/* Customer */}
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
+              <div style={{ width:4, height:22, background:`linear-gradient(${T.red},${T.redDark})`, borderRadius:4 }} />
+              <h2 style={{ margin:0, fontSize:17, fontWeight:900, color:T.text }}>{editId?'עריכת השכרה':'השכרה חדשה'}</h2>
+            </div>
+
+            {/* לקוח */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>לקוח *</label>
-              <select style={inp} value={form.customer_id} onChange={e => setForm(p => ({...p,customer_id:e.target.value}))}>
+              <select style={{ ...inp, background:T.card, boxShadow:T.neo }} value={form.customer_id} onChange={e => setForm(p=>({...p,customer_id:e.target.value}))}>
                 <option value="">-- בחר לקוח --</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
               </select>
@@ -274,187 +233,139 @@ export default function Rentals() {
 
             {/* ימי השכרה */}
             <div style={{ marginBottom:14 }}>
-              <label style={lbl}>🗓️ מספר ימי השכרה (משפיע על המחיר)</label>
+              <label style={lbl}>ימי השכרה (משפיע על המחיר)</label>
               <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
                 {DAY_PRESETS.map(d => (
-                  <button key={d} className="day-btn"
-                    onClick={() => setForm(p => ({...p, rental_days:d}))}
-                    style={{
-                      borderColor: form.rental_days===d ? '#6366f1' : '#e2e8f0',
-                      background:  form.rental_days===d ? '#eef2ff' : '#fff',
-                      color:       form.rental_days===d ? '#6366f1' : '#64748b',
-                    }}>
+                  <button key={d} className="day-btn" onClick={() => setForm(p=>({...p,rental_days:d}))}
+                    style={{ borderColor: form.rental_days===d ? T.red : T.border, background: form.rental_days===d ? T.redGlow : T.card, color: form.rental_days===d ? T.red : T.muted, boxShadow: form.rental_days===d ? `0 0 10px ${T.redGlow}` : T.neoOut }}>
                     ×{d}
                   </button>
                 ))}
                 <input type="number" min="1" value={form.rental_days}
-                  onChange={e => setForm(p => ({...p, rental_days: +e.target.value || 1}))}
-                  style={{ ...inp, width:80, textAlign:'center', fontWeight:700, color:'#6366f1' }} />
-                <span style={{ fontSize:13, color:'#94a3b8' }}>ימים</span>
+                  onChange={e => setForm(p=>({...p,rental_days:+e.target.value||1}))}
+                  style={{ ...inp, width:80, textAlign:'center', fontWeight:800, color:T.red, background:T.card, boxShadow:T.neo }} />
+                <span style={{ fontSize:12, color:T.muted }}>ימים</span>
               </div>
             </div>
 
-            {/* תאריכים — רק לזמינות */}
-            <div style={{ background:'#f8fafc', borderRadius:12, padding:14, marginBottom:14, border:'1px solid #e2e8f0' }}>
-              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
-                <span>📅</span>
-                <span>תאריכים — לבדיקת זמינות מלאי בלבד (לא משפיע על המחיר)</span>
-              </div>
+            {/* תאריכים — זמינות בלבד */}
+            <div style={{ background:T.card, borderRadius:12, padding:14, marginBottom:14, border:`1px solid ${T.border}` }}>
+              <div style={{ fontSize:10, color:T.muted, marginBottom:10, letterSpacing:1, textTransform:'uppercase' }}>📅 תאריכים — לבדיקת זמינות בלבד</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={lbl}>מתאריך</label>
-                  <input style={inp} type="date" value={form.start_date} onChange={e => setForm(p => ({...p,start_date:e.target.value}))} />
+                  <input style={{ ...inp, background:T.surface, boxShadow:T.neo }} type="date" value={form.start_date} onChange={e => setForm(p=>({...p,start_date:e.target.value}))} />
                 </div>
                 <div>
                   <label style={lbl}>עד תאריך</label>
-                  <input style={inp} type="date" value={form.end_date} onChange={e => setForm(p => ({...p,end_date:e.target.value}))} />
+                  <input style={{ ...inp, background:T.surface, boxShadow:T.neo }} type="date" value={form.end_date} onChange={e => setForm(p=>({...p,end_date:e.target.value}))} />
                 </div>
               </div>
             </div>
 
             {availLoading && (
-              <div style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px', fontSize:13, color:'#94a3b8', marginBottom:14, display:'flex', gap:8, alignItems:'center' }}>
-                <div style={{ width:14, height:14, border:'2px solid #e2e8f0', borderTop:'2px solid #6366f1', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
-                בודק זמינות ציוד...
+              <div style={{ background:T.card, borderRadius:10, padding:'10px 14px', fontSize:12, color:T.muted, marginBottom:14, display:'flex', gap:8, alignItems:'center', border:`1px solid ${T.border}` }}>
+                <div style={{ width:12, height:12, border:`2px solid ${T.border}`, borderTop:`2px solid ${T.red}`, borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+                בודק זמינות...
               </div>
             )}
 
             {/* Pickup */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>אופן איסוף</label>
-              <select style={inp} value={form.pickup_type} onChange={e => setForm(p => ({...p, pickup_type:e.target.value, delivery_price: e.target.value==='pickup' ? '0' : p.delivery_price}))}>
-                <option value="pickup">איסוף עצמי</option>
-                <option value="delivery">משלוח</option>
+              <select style={{ ...inp, background:T.card, boxShadow:T.neo }} value={form.pickup_type} onChange={e => setForm(p=>({...p,pickup_type:e.target.value,delivery_price:e.target.value==='pickup'?'0':p.delivery_price}))}>
+                <option value="pickup">📦 איסוף עצמי</option>
+                <option value="delivery">🚚 משלוח</option>
               </select>
             </div>
 
-            {form.pickup_type === 'delivery' && (
-              <div style={{ background:'#f8fafc', borderRadius:12, padding:14, marginBottom:14, border:'1px solid #e2e8f0' }}>
+            {form.pickup_type==='delivery' && (
+              <div style={{ background:T.card, borderRadius:12, padding:14, marginBottom:14, border:`1px solid ${T.border}` }}>
                 <div style={{ marginBottom:10 }}>
-                  <label style={lbl}>כתובת למשלוח</label>
-                  <input style={inp} type="text" placeholder="רחוב, עיר" value={form.delivery_address}
-                    onChange={e => setForm(p => ({...p,delivery_address:e.target.value}))} />
+                  <label style={lbl}>כתובת</label>
+                  <input style={{ ...inp, background:T.surface, boxShadow:T.neo }} type="text" placeholder="רחוב, עיר" value={form.delivery_address} onChange={e => setForm(p=>({...p,delivery_address:e.target.value}))} />
                 </div>
                 <div>
-                  <label style={lbl}>🚚 מחיר הובלה (₪)</label>
-                  <input style={{ ...inp, borderColor:'#6366f1' }} type="number" placeholder="0" value={form.delivery_price}
-                    onChange={e => setForm(p => ({...p,delivery_price:e.target.value}))} />
+                  <label style={lbl}>מחיר הובלה (₪)</label>
+                  <input style={{ ...inp, background:T.surface, boxShadow:T.neo, borderColor:T.red }} type="number" placeholder="0" value={form.delivery_price} onChange={e => setForm(p=>({...p,delivery_price:e.target.value}))} />
                 </div>
               </div>
             )}
 
-            {/* הרכבה ופירוק */}
+            {/* הרכבה */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>🔨 הרכבה ופירוק (₪)</label>
-              <input style={inp} type="number" placeholder="0" value={form.assembly_price}
-                onChange={e => setForm(p => ({...p,assembly_price:e.target.value}))}
-                onFocus={e => e.target.style.borderColor='#6366f1'}
-                onBlur={e => e.target.style.borderColor='#e2e8f0'} />
+              <input style={{ ...inp, background:T.card, boxShadow:T.neo }} type="number" placeholder="0" value={form.assembly_price} onChange={e => setForm(p=>({...p,assembly_price:e.target.value}))} onFocus={e=>e.target.style.borderColor=T.red} onBlur={e=>e.target.style.borderColor='#333'} />
             </div>
 
             {/* פריטים */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>פריטים</label>
               <div style={{ position:'relative', marginBottom:10 }}>
-                <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', fontSize:13 }}>🔍</span>
-                <input style={{ ...inp, paddingRight:32, fontSize:13 }} placeholder="חפש פריט לפי שם..."
-                  value={equipSearch} onChange={e => setEquipSearch(e.target.value)} />
+                <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:T.muted, fontSize:13 }}>🔍</span>
+                <input className="neo-input" style={{ ...inp, paddingRight:32, fontSize:12, background:T.card, boxShadow:T.neo }} placeholder="חפש פריט..." value={equipSearch} onChange={e => setEquipSearch(e.target.value)} />
               </div>
               {lines.map((l,i) => {
                 const avail = availability[l.equipment_id]
-                const isOver = l.equipment_id && avail !== undefined && +l.quantity > avail
+                const isOver = l.equipment_id && avail!==undefined && +l.quantity>avail
                 return (
                   <div key={i} style={{ marginBottom:8 }}>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                      <select style={{ ...inp, flex:2, borderColor: isOver ? '#ef4444' : '#e2e8f0' }}
-                        value={l.equipment_id} onChange={e => updateLine(i,'equipment_id',e.target.value)}>
+                      <select style={{ ...inp, flex:2, background:T.card, boxShadow:T.neo, borderColor: isOver ? T.red : '#333' }} value={l.equipment_id} onChange={e => updateLine(i,'equipment_id',e.target.value)}>
                         <option value="">-- בחר פריט --</option>
-                        {filteredEquip.map(e => {
-                          const av = availability[e.id]
-                          return <option key={e.id} value={e.id}>{e.name} (₪{e.daily_rate}/יום{av!==undefined ? ` | זמין: ${av}` : ''})</option>
-                        })}
+                        {filteredEquip.map(e => { const av=availability[e.id]; return <option key={e.id} value={e.id}>{e.name} (₪{e.daily_rate}/י{av!==undefined?` | ✓${av}`:''} )</option> })}
                       </select>
-                      <input style={{ ...inp, width:70, flex:'none', borderColor: isOver ? '#ef4444' : '#e2e8f0' }}
-                        type="number" min="1" value={l.quantity} onChange={e => updateLine(i,'quantity',e.target.value)} />
-                      {lines.length>1 && (
-                        <button onClick={() => removeLine(i)}
-                          style={{ background:'#fef2f2', border:'none', color:'#ef4444', borderRadius:8, padding:'8px 10px', cursor:'pointer', fontSize:14, fontWeight:700 }}>✕</button>
-                      )}
+                      <input style={{ ...inp, width:68, flex:'none', background:T.card, boxShadow:T.neo, borderColor: isOver ? T.red : '#333', textAlign:'center' }} type="number" min="1" value={l.quantity} onChange={e => updateLine(i,'quantity',e.target.value)} />
+                      {lines.length>1 && <button onClick={() => removeLine(i)} style={{ background:T.redGlow, border:`1px solid ${T.red}44`, color:T.red, borderRadius:8, padding:'8px 10px', cursor:'pointer', fontSize:13, fontWeight:700 }}>✕</button>}
                     </div>
-                    {isOver && (
-                      <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'6px 12px', fontSize:12, color:'#ef4444', marginTop:4 }}>
-                        ⚠️ ביקשת {l.quantity} יחידות — זמינות רק {avail}
-                      </div>
-                    )}
-                    {!isOver && l.equipment_id && avail!==undefined && +l.quantity>0 && (
-                      <div style={{ background:'#ecfdf5', border:'1px solid #bbf7d0', borderRadius:8, padding:'6px 12px', fontSize:12, color:'#10b981', marginTop:4 }}>
-                        ✅ זמין — {avail} יחידות פנויות
-                      </div>
-                    )}
+                    {isOver && <div style={{ background:T.redGlow, border:`1px solid ${T.red}44`, borderRadius:8, padding:'6px 12px', fontSize:11, color:T.red, marginTop:4 }}>⚠️ ביקשת {l.quantity} — זמין רק {avail}</div>}
+                    {!isOver && l.equipment_id && avail!==undefined && +l.quantity>0 && <div style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:8, padding:'6px 12px', fontSize:11, color:'#10b981', marginTop:4 }}>✅ זמין — {avail} יחידות</div>}
                   </div>
                 )
               })}
-              <button onClick={addLine}
-                style={{ background:'#f8fafc', border:'1px dashed #cbd5e1', color:'#64748b', borderRadius:10, padding:'8px 16px', cursor:'pointer', fontSize:13, width:'100%', marginTop:4 }}>
-                + הוסף פריט נוסף
-              </button>
+              <button onClick={addLine} style={{ background:'transparent', border:`1px dashed ${T.border}`, color:T.muted, borderRadius:10, padding:'8px 16px', cursor:'pointer', fontSize:12, width:'100%', marginTop:4, transition:'all 0.2s' }} onMouseEnter={e=>{e.currentTarget.style.borderColor=T.red;e.currentTarget.style.color=T.red}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.muted}}>+ פריט נוסף</button>
             </div>
 
-            {/* Discount + Deposit */}
+            {/* הנחה + מקדמה */}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
               <div>
                 <label style={lbl}>הנחה (₪)</label>
-                <input style={inp} type="number" value={form.discount} onChange={e => setForm(p => ({...p,discount:e.target.value}))} />
+                <input style={{ ...inp, background:T.card, boxShadow:T.neo }} type="number" value={form.discount} onChange={e => setForm(p=>({...p,discount:e.target.value}))} />
               </div>
               <div>
                 <label style={lbl}>מקדמה (₪)</label>
-                <input style={inp} type="number" value={form.deposit_amount} onChange={e => setForm(p => ({...p,deposit_amount:e.target.value}))} />
+                <input style={{ ...inp, background:T.card, boxShadow:T.neo }} type="number" value={form.deposit_amount} onChange={e => setForm(p=>({...p,deposit_amount:e.target.value}))} />
               </div>
             </div>
 
             <div style={{ marginBottom:16 }}>
               <label style={lbl}>הערות</label>
-              <input style={inp} type="text" value={form.notes} onChange={e => setForm(p => ({...p,notes:e.target.value}))} />
+              <input style={{ ...inp, background:T.card, boxShadow:T.neo }} type="text" value={form.notes} onChange={e => setForm(p=>({...p,notes:e.target.value}))} onFocus={e=>e.target.style.borderColor=T.red} onBlur={e=>e.target.style.borderColor='#333'} />
             </div>
 
-            {/* Total */}
-            <div style={{ background:'linear-gradient(135deg,#eef2ff,#f5f3ff)', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
-              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8, textAlign:'center' }}>
-                פירוט עלויות — {form.rental_days} יום
+            {/* סיכום */}
+            <div style={{ background:`linear-gradient(135deg,rgba(229,57,53,0.1),rgba(183,28,28,0.05))`, borderRadius:14, padding:'16px 20px', marginBottom:20, border:`1px solid rgba(229,57,53,0.2)` }}>
+              <div style={{ fontSize:10, color:T.muted, marginBottom:10, textAlign:'center', letterSpacing:2, textTransform:'uppercase' }}>פירוט — {form.rental_days} יום</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:12 }}>
+                {form.pickup_type==='delivery' && +form.delivery_price>0 && <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:T.muted }}><span>🚚 הובלה</span><span>₪{(+form.delivery_price).toLocaleString()}</span></div>}
+                {+form.assembly_price>0 && <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:T.muted }}><span>🔨 הרכבה</span><span>₪{(+form.assembly_price).toLocaleString()}</span></div>}
+                {+form.discount>0 && <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#10b981' }}><span>🎁 הנחה</span><span>-₪{(+form.discount).toLocaleString()}</span></div>}
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#f59e0b' }}><span>🧾 מע"מ 18%</span><span>₪{calcVAT().toFixed(2)}</span></div>
               </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:10 }}>
-                {form.pickup_type === 'delivery' && +form.delivery_price > 0 && (
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
-                    <span>🚚 הובלה</span><span>₪{(+form.delivery_price).toLocaleString()}</span>
-                  </div>
-                )}
-                {+form.assembly_price > 0 && (
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
-                    <span>🔨 הרכבה ופירוק</span><span>₪{(+form.assembly_price).toLocaleString()}</span>
-                  </div>
-                )}
-                {+form.discount > 0 && (
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#10b981' }}>
-                    <span>🎁 הנחה</span><span>-₪{(+form.discount).toLocaleString()}</span>
-                  </div>
-                )}
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#f59e0b' }}>
-                  <span>🧾 מע"מ 18%</span><span>₪{calcVAT().toFixed(2)}</span>
-                </div>
-              </div>
-              <div style={{ textAlign:'center', borderTop:'1px solid #c7d2fe', paddingTop:10 }}>
-                <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום כולל מע"מ</div>
-                <div style={{ fontSize:28, fontWeight:800, color:'#6366f1' }}>₪{calcTotal().toFixed(2)}</div>
+              <div style={{ textAlign:'center', borderTop:`1px solid rgba(229,57,53,0.2)`, paddingTop:12 }}>
+                <div style={{ fontSize:10, color:T.muted, marginBottom:4, letterSpacing:1 }}>סה״כ כולל מע"מ</div>
+                <div style={{ fontSize:30, fontWeight:900, color:T.red, textShadow:`0 0 20px ${T.redGlow}` }}>₪{calcTotal().toFixed(2)}</div>
               </div>
             </div>
 
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={save} disabled={saving}
-                style={{ flex:1, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', color:'#fff', fontWeight:700, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
-                {saving ? 'שומר...' : editId ? 'עדכן השכרה' : 'צור השכרה'}
+              <button className="neo-btn" onClick={save} disabled={saving} style={{ flex:1, padding:'13px', fontSize:15, borderRadius:12 }}>
+                {saving ? 'שומר...' : editId ? 'עדכן' : 'צור השכרה'}
               </button>
               <button onClick={() => { setModal(false); setEditId(null) }}
-                style={{ flex:1, background:'#f8fafc', border:'1px solid #e2e8f0', color:'#64748b', fontWeight:600, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15 }}>
+                style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, color:T.muted, fontWeight:600, padding:'13px', borderRadius:12, cursor:'pointer', fontSize:15, boxShadow:T.neoOut, transition:'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor=T.red}
+                onMouseLeave={e => e.currentTarget.style.borderColor=T.border}>
                 ביטול
               </button>
             </div>
@@ -464,6 +375,3 @@ export default function Rentals() {
     </div>
   )
 }
-
-const lbl = { display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:5 }
-const inp = { width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box', transition:'border-color 0.2s' }

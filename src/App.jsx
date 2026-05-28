@@ -28,34 +28,50 @@ const ALL_NAV = [
   { path: '/settings',   label: 'הגדרות',  icon: '⚙️', roles: ['owner','manager'] },
 ]
 
-const MOBILE_MAIN = ['dashboard', 'rentals', 'inventory', 'customers']
+const MOBILE_MAIN = ['/dashboard', '/rentals', '/inventory', '/customers']
+
+// ── Global design tokens ──────────────────────────────────────────
+export const T = {
+  bg:       '#0d0d0d',
+  surface:  '#161616',
+  card:     '#1a1a1a',
+  border:   '#2a2a2a',
+  red:      '#e53935',
+  redDark:  '#b71c1c',
+  redGlow:  'rgba(229,57,53,0.18)',
+  text:     '#f0f0f0',
+  muted:    '#888',
+  neo:      'inset 2px 2px 5px rgba(0,0,0,0.6), inset -2px -2px 5px rgba(255,255,255,0.04)',
+  neoOut:   '4px 4px 10px rgba(0,0,0,0.6), -2px -2px 6px rgba(255,255,255,0.03)',
+  neoPress: 'inset 3px 3px 8px rgba(0,0,0,0.7), inset -1px -1px 3px rgba(255,255,255,0.03)',
+}
 
 function MobileNav({ nav }) {
   const [showMore, setShowMore] = useState(false)
-  const mainPaths  = nav.filter(n => MOBILE_MAIN.some(m => n.path === `/${m}` || (m === 'dashboard' && n.path === '/dashboard')))
-  const moreItems  = nav.filter(n => !mainPaths.includes(n))
+  const mainItems = nav.filter(n => MOBILE_MAIN.includes(n.path))
+  const moreItems = nav.filter(n => !MOBILE_MAIN.includes(n.path))
 
   return (
     <>
       {showMore && (
-        <div style={{ position:'fixed', bottom:65, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', zIndex:99, boxShadow:'0 -4px 20px rgba(0,0,0,0.1)', direction:'rtl' }}>
+        <div style={{ position:'fixed', bottom:65, right:0, left:0, background:T.surface, borderTop:`1px solid ${T.border}`, zIndex:99, boxShadow:'0 -8px 32px rgba(0,0,0,0.8)', direction:'rtl' }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', padding:'12px 8px' }}>
             {moreItems.map(n => (
               <NavLink key={n.path} to={n.path} end={n.path === '/'}
                 onClick={() => setShowMore(false)}
                 style={({ isActive }) => ({
                   display:'flex', flexDirection:'column', alignItems:'center', gap:4,
-                  color: isActive ? '#6366f1' : '#64748b',
+                  color: isActive ? T.red : T.muted,
                   textDecoration:'none', fontSize:11, fontWeight: isActive ? 700 : 400,
                   padding:'10px 4px', borderRadius:10,
-                  background: isActive ? '#eef2ff' : 'transparent',
+                  background: isActive ? T.redGlow : 'transparent',
                 })}>
                 <span style={{ fontSize:22 }}>{n.icon}</span>
                 {n.label}
               </NavLink>
             ))}
             <button onClick={() => { supabase.auth.signOut(); setShowMore(false) }}
-              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, background:'transparent', border:'none', color:'#ef4444', fontSize:11, cursor:'pointer', padding:'10px 4px', borderRadius:10 }}>
+              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, background:'transparent', border:'none', color:T.muted, fontSize:11, cursor:'pointer', padding:'10px 4px' }}>
               <span style={{ fontSize:22 }}>🚪</span>יציאה
             </button>
           </div>
@@ -63,12 +79,12 @@ function MobileNav({ nav }) {
       )}
       {showMore && <div style={{ position:'fixed', inset:0, zIndex:98 }} onClick={() => setShowMore(false)} />}
 
-      <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-around', padding:'6px 0 8px', zIndex:100, boxShadow:'0 -4px 20px rgba(0,0,0,0.06)' }}>
-        {mainPaths.slice(0,4).map(n => (
+      <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:T.surface, borderTop:`1px solid ${T.border}`, display:'flex', justifyContent:'space-around', padding:'6px 0 10px', zIndex:100, boxShadow:'0 -4px 24px rgba(0,0,0,0.8)' }}>
+        {mainItems.map(n => (
           <NavLink key={n.path} to={n.path} end={n.path === '/'}
             style={({ isActive }) => ({
               display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-              color: isActive ? '#6366f1' : '#94a3b8',
+              color: isActive ? T.red : T.muted,
               textDecoration:'none', fontSize:10, fontWeight: isActive ? 700 : 400,
               padding:'4px 12px', borderRadius:8, transition:'all 0.2s'
             })}>
@@ -79,7 +95,7 @@ function MobileNav({ nav }) {
         {moreItems.length > 0 && (
           <button onClick={() => setShowMore(p => !p)}
             style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, background:'transparent', border:'none',
-              color: showMore ? '#6366f1' : '#94a3b8', fontSize:10, cursor:'pointer', padding:'4px 12px', borderRadius:8, fontWeight: showMore ? 700 : 400 }}>
+              color: showMore ? T.red : T.muted, fontSize:10, cursor:'pointer', padding:'4px 12px', fontWeight: showMore ? 700 : 400 }}>
             <span style={{ fontSize:20 }}>{showMore ? '✕' : '⋯'}</span>
             עוד
           </button>
@@ -90,15 +106,13 @@ function MobileNav({ nav }) {
 }
 
 function ProtectedRoute({ children, allowedRoles, userRole }) {
-  if (!allowedRoles.includes(userRole)) {
-    return (
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', color:'#94a3b8', direction:'rtl' }}>
-        <div style={{ fontSize:48, marginBottom:16 }}>🔒</div>
-        <div style={{ fontSize:18, fontWeight:700, color:'#1e293b' }}>אין לך הרשאה לצפות בדף זה</div>
-        <div style={{ fontSize:13, marginTop:8 }}>דף זה מיועד לבעלים ומנהלים בלבד</div>
-      </div>
-    )
-  }
+  if (!allowedRoles.includes(userRole)) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', color:T.muted, direction:'rtl' }}>
+      <div style={{ fontSize:48, marginBottom:16 }}>🔒</div>
+      <div style={{ fontSize:18, fontWeight:700, color:T.text }}>אין לך הרשאה לצפות בדף זה</div>
+      <div style={{ fontSize:13, marginTop:8 }}>דף זה מיועד לבעלים ומנהלים בלבד</div>
+    </div>
+  )
   return children
 }
 
@@ -134,24 +148,22 @@ export default function App() {
   }, [])
 
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#f8f9fb' }}>
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
-        <div style={{ width:40, height:40, border:'3px solid #e2e8f0', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:T.bg }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
+        <div style={{ width:48, height:48, border:`3px solid ${T.border}`, borderTop:`3px solid ${T.red}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-        <span style={{ color:'#94a3b8', fontSize:14 }}>טוען...</span>
+        <span style={{ color:T.muted, fontSize:14, letterSpacing:2 }}>LOADING...</span>
       </div>
     </div>
   )
 
-  if (window.location.pathname.startsWith('/contract/')) {
-    return (
-      <BrowserRouter>
-        <Routes>
-          <Route path="/contract/:id" element={<Contract />} />
-        </Routes>
-      </BrowserRouter>
-    )
-  }
+  if (window.location.pathname.startsWith('/contract/')) return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/contract/:id" element={<Contract />} />
+      </Routes>
+    </BrowserRouter>
+  )
 
   if (!session) return <Login />
 
@@ -162,52 +174,84 @@ export default function App() {
     <BrowserRouter>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #f8f9fb; }
-        .nav-link { transition: all 0.2s ease; }
-        .nav-link:hover { background: #f1f5f9 !important; color: #1e293b !important; }
-        .fade-in { animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }
+        body { background: ${T.bg}; color: ${T.text}; }
+        ::selection { background: ${T.red}; color: #fff; }
+
+        .nav-link { transition: all 0.25s ease; position: relative; overflow: hidden; }
+        .nav-link::before { content:''; position:absolute; inset:0; background: linear-gradient(135deg, ${T.red}, ${T.redDark}); opacity:0; transition: opacity 0.25s; border-radius:10px; }
+        .nav-link:hover::before { opacity:0.12; }
+        .nav-link-active::before { opacity:1 !important; }
+
+        .neo-card { background:${T.card}; border-radius:16px; box-shadow:${T.neoOut}; border:1px solid ${T.border}; transition: box-shadow 0.2s, transform 0.2s; }
+        .neo-card:hover { box-shadow: 6px 6px 16px rgba(0,0,0,0.7), -2px -2px 8px rgba(255,255,255,0.04), 0 0 20px ${T.redGlow}; transform: translateY(-2px); }
+
+        .neo-btn { background: linear-gradient(135deg, ${T.red}, ${T.redDark}); border:none; color:#fff; font-weight:700; border-radius:12px; cursor:pointer; transition:all 0.2s; box-shadow: 0 4px 15px rgba(229,57,53,0.4), inset 0 1px 0 rgba(255,255,255,0.1); }
+        .neo-btn:hover { transform:translateY(-2px); box-shadow: 0 8px 25px rgba(229,57,53,0.5), inset 0 1px 0 rgba(255,255,255,0.15); }
+        .neo-btn:active { transform:translateY(0); box-shadow: 0 2px 8px rgba(229,57,53,0.3); }
+
+        .neo-input { background:${T.card}; border:1px solid ${T.border}; color:${T.text}; border-radius:10px; box-shadow:${T.neo}; transition:all 0.2s; outline:none; }
+        .neo-input:focus { border-color:${T.red}; box-shadow:${T.neo}, 0 0 0 3px ${T.redGlow}; }
+
+        .fade-in { animation: fadeIn 0.35s ease; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform: rotate(360deg) } }
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: #f1f5f9; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+        ::-webkit-scrollbar { width:4px; }
+        ::-webkit-scrollbar-track { background:${T.bg}; }
+        ::-webkit-scrollbar-thumb { background:${T.border}; border-radius:10px; }
+        ::-webkit-scrollbar-thumb:hover { background:${T.red}; }
+
+        .chip-btn { transition:all 0.15s; cursor:pointer; }
+        .chip-btn:hover { border-color:${T.red} !important; color:${T.red} !important; }
+        .icon-btn { transition:all 0.15s; opacity:0.4; background:transparent; border:none; cursor:pointer; }
+        .icon-btn:hover { opacity:1; transform:scale(1.15); }
       `}</style>
 
-      <div style={{ display:'flex', flexDirection: mobile ? 'column' : 'row', minHeight:'100vh', background:'#f8f9fb', fontFamily:'"Inter", "Segoe UI", sans-serif', direction:'rtl' }}>
+      <div style={{ display:'flex', flexDirection: mobile ? 'column' : 'row', minHeight:'100vh', background:T.bg, fontFamily:'"Inter","Segoe UI",sans-serif', direction:'rtl' }}>
 
-        {mobile ? (
-          <MobileNav nav={nav} />
-        ) : (
-          <aside style={{ width:230, background:'#fff', borderLeft:'1px solid #e2e8f0', display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:'2px 0 12px rgba(0,0,0,0.04)' }}>
-            <div style={{ padding:'4px 8px 20px', borderBottom:'1px solid #f1f5f9', marginBottom:16 }}>
-              <div style={{ fontSize:18, fontWeight:800, color:'#1e293b', letterSpacing:'-0.3px' }}>🏔️ אוורסט</div>
-              <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>
-                {profile?.full_name || ''} · {userRole === 'owner' ? 'בעלים' : userRole === 'manager' ? 'מנהל' : 'עובד'}
+        {mobile ? <MobileNav nav={nav} /> : (
+          <aside style={{ width:240, background:T.surface, borderLeft:`1px solid ${T.border}`, display:'flex', flexDirection:'column', padding:'24px 16px', boxShadow:`4px 0 24px rgba(0,0,0,0.6)`, position:'sticky', top:0, height:'100vh' }}>
+
+            {/* Logo */}
+            <div style={{ padding:'8px 12px 24px', borderBottom:`1px solid ${T.border}`, marginBottom:20 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:`linear-gradient(135deg,${T.red},${T.redDark})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, boxShadow:`0 4px 12px rgba(229,57,53,0.4)` }}>
+                  🏔️
+                </div>
+                <div>
+                  <div style={{ fontSize:16, fontWeight:900, color:T.text, letterSpacing:1 }}>אוורסט</div>
+                  <div style={{ fontSize:10, color:T.muted, letterSpacing:2, textTransform:'uppercase' }}>Event Rental</div>
+                </div>
+              </div>
+              <div style={{ marginTop:10, fontSize:11, color:T.muted }}>
+                {profile?.full_name} · <span style={{ color:T.red }}>{userRole === 'owner' ? 'בעלים' : userRole === 'manager' ? 'מנהל' : 'עובד'}</span>
               </div>
             </div>
 
             <GlobalSearch />
 
-            <nav style={{ display:'flex', flexDirection:'column', gap:2, flex:1, overflowY:'auto' }}>
+            <nav style={{ display:'flex', flexDirection:'column', gap:3, flex:1, overflowY:'auto' }}>
               {nav.map(n => (
                 <NavLink key={n.path} to={n.path} end={n.path === '/'}
-                  className="nav-link"
+                  className={({ isActive }) => `nav-link${isActive ? ' nav-link-active' : ''}`}
                   style={({ isActive }) => ({
-                    display:'flex', alignItems:'center', gap:10, padding:'10px 12px',
-                    borderRadius:10, textDecoration:'none', fontSize:14,
-                    color: isActive ? '#6366f1' : '#64748b',
-                    background: isActive ? '#eef2ff' : 'transparent',
-                    fontWeight: isActive ? 600 : 400,
+                    display:'flex', alignItems:'center', gap:12, padding:'11px 14px',
+                    borderRadius:10, textDecoration:'none', fontSize:13, position:'relative', zIndex:1,
+                    color: isActive ? '#fff' : T.muted,
+                    fontWeight: isActive ? 700 : 400,
                   })}>
-                  <span style={{ fontSize:16 }}>{n.icon}</span>{n.label}
+                  <span style={{ fontSize:16 }}>{n.icon}</span>
+                  {n.label}
+                  {n.path === '/rentals' && <span style={{ marginRight:'auto', background:T.red, color:'#fff', fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:10 }}>NEW</span>}
                 </NavLink>
               ))}
             </nav>
 
             <button
-              style={{ background:'transparent', border:'1px solid #e2e8f0', color:'#94a3b8', padding:'9px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s', marginTop:8 }}
-              onMouseEnter={e => e.target.style.background='#fee2e2'}
-              onMouseLeave={e => e.target.style.background='transparent'}
+              style={{ background:'transparent', border:`1px solid ${T.border}`, color:T.muted, padding:'10px', borderRadius:10, cursor:'pointer', fontSize:13, transition:'all 0.2s', marginTop:12, boxShadow:T.neo }}
+              onMouseEnter={e => { e.target.style.borderColor=T.red; e.target.style.color=T.red }}
+              onMouseLeave={e => { e.target.style.borderColor=T.border; e.target.style.color=T.muted }}
               onClick={() => supabase.auth.signOut()}>
               🚪 התנתק
             </button>
@@ -217,38 +261,18 @@ export default function App() {
         <main style={{ flex:1, overflowY:'auto', padding: mobile ? '20px 16px 80px' : '32px 36px' }}>
           <div className="fade-in">
             <Routes>
-              <Route path="/" element={
-                <ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}>
-                  <Business />
-                </ProtectedRoute>
-              } />
-              <Route path="/dashboard"  element={<Dashboard />} />
-              <Route path="/inventory"  element={<Inventory />} />
-              <Route path="/rentals"    element={<Rentals />} />
-              <Route path="/payments"   element={
-                <ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}>
-                  <Payments />
-                </ProtectedRoute>
-              } />
-              <Route path="/customers"  element={<Customers />} />
-              <Route path="/contracts"  element={
-                <ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}>
-                  <ContractManager />
-                </ProtectedRoute>
-              } />
+              <Route path="/" element={<ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}><Business /></ProtectedRoute>} />
+              <Route path="/dashboard"    element={<Dashboard />} />
+              <Route path="/inventory"    element={<Inventory />} />
+              <Route path="/rentals"      element={<Rentals />} />
+              <Route path="/payments"     element={<ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}><Payments /></ProtectedRoute>} />
+              <Route path="/customers"    element={<Customers />} />
+              <Route path="/contracts"    element={<ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}><ContractManager /></ProtectedRoute>} />
               <Route path="/contract/:id" element={<Contract />} />
-              <Route path="/calendar"   element={<Calendar />} />
-              <Route path="/team"       element={
-                <ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}>
-                  <Team />
-                </ProtectedRoute>
-              } />
-              <Route path="/settings"   element={
-                <ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}>
-                  <Settings />
-                </ProtectedRoute>
-              } />
-              <Route path="*" element={<Navigate to={userRole === 'staff' ? '/dashboard' : '/'} />} />
+              <Route path="/calendar"     element={<Calendar />} />
+              <Route path="/team"         element={<ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}><Team /></ProtectedRoute>} />
+              <Route path="/settings"     element={<ProtectedRoute allowedRoles={['owner','manager']} userRole={userRole}><Settings /></ProtectedRoute>} />
+              <Route path="*"             element={<Navigate to={userRole === 'staff' ? '/dashboard' : '/'} />} />
             </Routes>
           </div>
         </main>
