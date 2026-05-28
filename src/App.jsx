@@ -9,18 +9,23 @@ import Business from './pages/Business'
 import Calendar from './pages/Calendar'
 import Settings from './pages/Settings'
 import Payments from './pages/Payments'
+import Team from './pages/Team'
+import ContractManager from './pages/ContractManager'
+import Contract from './pages/Contract'
 import Login from './pages/Login'
 import GlobalSearch from './GlobalSearch'
 
 const NAV = [
-  { path: '/',          label: 'עסק',     icon: '💼' },
-  { path: '/dashboard', label: 'בקרה',    icon: '📊' },
-  { path: '/inventory', label: 'מלאי',    icon: '📦' },
-  { path: '/rentals',   label: 'השכרות',  icon: '📋' },
-  { path: '/payments',  label: 'תשלומים', icon: '💳' },
-  { path: '/customers', label: 'לקוחות',  icon: '👤' },
-  { path: '/calendar',  label: 'לוח שנה', icon: '📅' },
-  { path: '/settings',  label: 'הגדרות',  icon: '⚙️' },
+  { path: '/',           label: 'עסק',     icon: '💼' },
+  { path: '/dashboard',  label: 'בקרה',    icon: '📊' },
+  { path: '/inventory',  label: 'מלאי',    icon: '📦' },
+  { path: '/rentals',    label: 'השכרות',  icon: '📋' },
+  { path: '/payments',   label: 'תשלומים', icon: '💳' },
+  { path: '/customers',  label: 'לקוחות',  icon: '👤' },
+  { path: '/contracts',  label: 'חוזים',   icon: '📄' },
+  { path: '/calendar',   label: 'לוח שנה', icon: '📅' },
+  { path: '/team',       label: 'צוות',    icon: '👥' },
+  { path: '/settings',   label: 'הגדרות',  icon: '⚙️' },
 ]
 
 export default function App() {
@@ -53,6 +58,17 @@ export default function App() {
     </div>
   )
 
+  // עמוד חתימת חוזה — ללא התחברות
+  if (window.location.pathname.startsWith('/contract/')) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/contract/:id" element={<Contract />} />
+        </Routes>
+      </BrowserRouter>
+    )
+  }
+
   if (!session) return <Login />
 
   return (
@@ -74,7 +90,7 @@ export default function App() {
 
         {mobile ? (
           <nav style={{ position:'fixed', bottom:0, right:0, left:0, background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-around', padding:'6px 0 8px', zIndex:100, boxShadow:'0 -4px 20px rgba(0,0,0,0.06)' }}>
-            {NAV.slice(0,7).map(n => (
+            {NAV.slice(0,8).map(n => (
               <NavLink key={n.path} to={n.path} end={n.path === '/'}
                 style={({ isActive }) => ({
                   display:'flex', flexDirection:'column', alignItems:'center', gap:2,
@@ -82,7 +98,7 @@ export default function App() {
                   textDecoration:'none', fontSize:9, fontWeight: isActive ? 700 : 400,
                   padding:'4px 4px', borderRadius:8, transition:'all 0.2s'
                 })}>
-                <span style={{ fontSize:16 }}>{n.icon}</span>
+                <span style={{ fontSize:15 }}>{n.icon}</span>
                 {n.label}
               </NavLink>
             ))}
@@ -96,7 +112,7 @@ export default function App() {
 
             <GlobalSearch />
 
-            <nav style={{ display:'flex', flexDirection:'column', gap:2, flex:1 }}>
+            <nav style={{ display:'flex', flexDirection:'column', gap:2, flex:1, overflowY:'auto' }}>
               {NAV.map(n => (
                 <NavLink key={n.path} to={n.path} end={n.path === '/'}
                   className="nav-link"
@@ -125,15 +141,18 @@ export default function App() {
         <main style={{ flex:1, overflowY:'auto', padding: mobile ? '20px 16px 80px' : '32px 36px' }}>
           <div className="fade-in">
             <Routes>
-              <Route path="/"          element={<Business />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/inventory" element={<Inventory />} />
-              <Route path="/rentals"   element={<Rentals />} />
-              <Route path="/payments"  element={<Payments />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/calendar"  element={<Calendar />} />
-              <Route path="/settings"  element={<Settings />} />
-              <Route path="*"          element={<Navigate to="/" />} />
+              <Route path="/"           element={<Business />} />
+              <Route path="/dashboard"  element={<Dashboard />} />
+              <Route path="/inventory"  element={<Inventory />} />
+              <Route path="/rentals"    element={<Rentals />} />
+              <Route path="/payments"   element={<Payments />} />
+              <Route path="/customers"  element={<Customers />} />
+              <Route path="/contracts"  element={<ContractManager />} />
+              <Route path="/contract/:id" element={<Contract />} />
+              <Route path="/calendar"   element={<Calendar />} />
+              <Route path="/team"       element={<Team />} />
+              <Route path="/settings"   element={<Settings />} />
+              <Route path="*"           element={<Navigate to="/" />} />
             </Routes>
           </div>
         </main>
