@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 const STATUS_LABEL = { draft:'טיוטה', confirmed:'מאושר', active:'פעיל', returned:'הוחזר', cancelled:'בוטל' }
 const STATUS_COLOR = { draft:'#94a3b8', confirmed:'#f59e0b', active:'#10b981', returned:'#8b5cf6', cancelled:'#ef4444' }
 const STATUS_BG    = { draft:'#f8fafc', confirmed:'#fffbeb', active:'#ecfdf5', returned:'#f5f3ff', cancelled:'#fef2f2' }
-const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', delivery_price:'0', discount:'0', deposit_amount:'0', notes:'' }
+const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', delivery_price:'0', assembly_price:'0', discount:'0', deposit_amount:'0', notes:'' }
 
 export default function Rentals() {
   const [rentals, setRentals]           = useState([])
@@ -70,14 +70,12 @@ export default function Rentals() {
       pickup_type:      r.pickup_type,
       delivery_address: r.delivery_address || '',
       delivery_price:   String(r.delivery_price || 0),
+      assembly_price:   String(r.assembly_price || 0),
       discount:         String(r.discount || 0),
       deposit_amount:   String(r.deposit_amount || 0),
       notes:            r.notes || '',
     })
-    const { data: items } = await supabase
-      .from('rental_items')
-      .select('equipment_id, quantity')
-      .eq('rental_id', r.id)
+    const { data: items } = await supabase.from('rental_items').select('equipment_id, quantity').eq('rental_id', r.id)
     setLines(items?.length ? items : [{ equipment_id:'', quantity:1 }])
     setAvailability({})
     setModal(true)
@@ -97,10 +95,11 @@ export default function Rentals() {
   const calcSubtotal = () => {
     if (!form.start_date || !form.end_date) return 0
     const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
-    return lines.reduce((s,l) => {
+    const itemsTotal = lines.reduce((s,l) => {
       const eq = equipment.find(e => e.id === l.equipment_id)
       return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
-    }, 0) + +form.delivery_price - +form.discount
+    }, 0)
+    return itemsTotal + +form.delivery_price + +form.assembly_price - +form.discount
   }
   const calcVAT   = () => calcSubtotal() * 0.18
   const calcTotal = () => calcSubtotal() * 1.18
@@ -116,10 +115,10 @@ export default function Rentals() {
       discount:       +form.discount,
       deposit_amount: +form.deposit_amount,
       delivery_price: +form.delivery_price,
+      assembly_price: +form.assembly_price,
     }
 
     if (editId) {
-      // עדכון הזמנה קיימת
       await supabase.from('rentals').update(payload).eq('id', editId)
       await supabase.from('rental_items').delete().eq('rental_id', editId)
       for (const l of lines.filter(l => l.equipment_id)) {
@@ -127,7 +126,6 @@ export default function Rentals() {
         await supabase.from('rental_items').insert({ rental_id:editId, equipment_id:l.equipment_id, quantity:+l.quantity, daily_rate:eq.daily_rate })
       }
     } else {
-      // הזמנה חדשה
       const { data:{ user } } = await supabase.auth.getUser()
       const { data:rental, error } = await supabase.from('rentals').insert({ ...payload, created_by:user.id }).select().single()
       if (error) { alert('שגיאה: ' + error.message); setSaving(false); return }
@@ -218,11 +216,10 @@ export default function Rentals() {
                 </div>
                 <div>
                   <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
-                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>
-                    {r.start_date} → {r.end_date}
-                    {r.pickup_type === 'delivery' && r.delivery_price > 0 && (
-                      <span style={{ marginRight:8, color:'#6366f1', fontWeight:600 }}>🚚 ₪{r.delivery_price}</span>
-                    )}
+                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2, display:'flex', gap:8, flexWrap:'wrap' }}>
+                    <span>{r.start_date} → {r.end_date}</span>
+                    {r.delivery_price > 0 && <span style={{ color:'#6366f1', fontWeight:600 }}>🚚 ₪{r.delivery_price}</span>}
+                    {r.assembly_price > 0 && <span style={{ color:'#10b981', fontWeight:600 }}>🔨 ₪{r.assembly_price}</span>}
                   </div>
                   {r.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{r.notes}</div>}
                 </div>
@@ -302,6 +299,15 @@ export default function Rentals() {
               </div>
             )}
 
+            {/* הרכבה ופירוק */}
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>🔨 הרכבה ופירוק (₪)</label>
+              <input style={inp} type="number" placeholder="0" value={form.assembly_price}
+                onChange={e => setForm(p => ({...p,assembly_price:e.target.value}))}
+                onFocus={e => e.target.style.borderColor='#6366f1'}
+                onBlur={e => e.target.style.borderColor='#e2e8f0'} />
+            </div>
+
             {/* Lines */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>פריטים</label>
@@ -370,6 +376,12 @@ export default function Rentals() {
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
                     <span>🚚 הובלה</span>
                     <span>₪{(+form.delivery_price).toLocaleString()}</span>
+                  </div>
+                )}
+                {+form.assembly_price > 0 && (
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
+                    <span>🔨 הרכבה ופירוק</span>
+                    <span>₪{(+form.assembly_price).toLocaleString()}</span>
                   </div>
                 )}
                 {+form.discount > 0 && (
