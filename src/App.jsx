@@ -137,13 +137,21 @@ export default function App() {
   }
 
   useEffect(() => {
+    const safety = setTimeout(() => {
+      console.warn('Loading timeout - forcing render')
+      setLoading(false)
+    }, 5000)
+
     supabase.auth.getSession()
       .then(async ({ data }) => {
         setSession(data.session)
         if (data.session) await fetchProfile(data.session.user.id)
       })
       .catch(console.error)
-      .finally(() => setLoading(false))
+      .finally(() => {
+        clearTimeout(safety)
+        setLoading(false)
+      })
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_e, s) => {
       setSession(s)
@@ -151,7 +159,10 @@ export default function App() {
       else setProfile(null)
     })
 
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      clearTimeout(safety)
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   if (loading) return (
