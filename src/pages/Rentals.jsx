@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 const STATUS_LABEL = { draft:'טיוטה', confirmed:'מאושר', active:'פעיל', returned:'הוחזר', cancelled:'בוטל' }
 const STATUS_COLOR = { draft:'#94a3b8', confirmed:'#f59e0b', active:'#10b981', returned:'#8b5cf6', cancelled:'#ef4444' }
 const STATUS_BG    = { draft:'#f8fafc', confirmed:'#fffbeb', active:'#ecfdf5', returned:'#f5f3ff', cancelled:'#fef2f2' }
-const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', discount:'0', deposit_amount:'0', notes:'' }
+const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', delivery_price:'0', discount:'0', deposit_amount:'0', notes:'' }
 
 export default function Rentals() {
   const [rentals, setRentals]           = useState([])
@@ -63,10 +63,11 @@ export default function Rentals() {
   const calcTotal = () => {
     if (!form.start_date || !form.end_date) return 0
     const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
-    return lines.reduce((s,l) => {
+    const itemsTotal = lines.reduce((s,l) => {
       const eq = equipment.find(e => e.id === l.equipment_id)
       return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
-    }, 0) - +form.discount
+    }, 0)
+    return itemsTotal + +form.delivery_price - +form.discount
   }
 
   const save = async () => {
@@ -76,7 +77,11 @@ export default function Rentals() {
     setSaving(true)
     const { data:{ user } } = await supabase.auth.getUser()
     const { data:rental, error } = await supabase.from('rentals').insert({
-      ...form, discount:+form.discount, deposit_amount:+form.deposit_amount, created_by:user.id
+      ...form,
+      discount:       +form.discount,
+      deposit_amount: +form.deposit_amount,
+      delivery_price: +form.delivery_price,
+      created_by:     user.id
     }).select().single()
     if (error) { alert('שגיאה: ' + error.message); setSaving(false); return }
     for (const l of lines.filter(l => l.equipment_id)) {
@@ -151,10 +156,17 @@ export default function Rentals() {
             <div key={r.id} className="rent-row"
               style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom: i<filtered.length-1 ? '1px solid #f8fafc' : 'none', animation:`fadeUp 0.25s ease ${i*0.03}s both` }}>
               <div style={{ display:'flex', gap:14, alignItems:'center' }}>
-                <div style={{ width:40, height:40, borderRadius:12, background:'#eef2ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>📋</div>
+                <div style={{ width:40, height:40, borderRadius:12, background:'#eef2ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
+                  {r.pickup_type === 'delivery' ? '🚚' : '📋'}
+                </div>
                 <div>
                   <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
-                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{r.start_date} → {r.end_date}</div>
+                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>
+                    {r.start_date} → {r.end_date}
+                    {r.pickup_type === 'delivery' && r.delivery_price > 0 && (
+                      <span style={{ marginRight:8, color:'#6366f1', fontWeight:600 }}>🚚 ₪{r.delivery_price}</span>
+                    )}
+                  </div>
                   {r.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{r.notes}</div>}
                 </div>
               </div>
@@ -204,16 +216,27 @@ export default function Rentals() {
             {/* Pickup */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>אופן איסוף</label>
-              <select style={inp} value={form.pickup_type} onChange={e => setForm(p => ({...p,pickup_type:e.target.value}))}>
+              <select style={inp} value={form.pickup_type} onChange={e => setForm(p => ({...p, pickup_type:e.target.value, delivery_price: e.target.value==='pickup' ? '0' : p.delivery_price}))}>
                 <option value="pickup">איסוף עצמי</option>
                 <option value="delivery">משלוח</option>
               </select>
             </div>
 
-            {form.pickup_type==='delivery' && (
-              <div style={{ marginBottom:14 }}>
-                <label style={lbl}>כתובת למשלוח</label>
-                <input style={inp} type="text" value={form.delivery_address} onChange={e => setForm(p => ({...p,delivery_address:e.target.value}))} />
+            {/* שדות משלוח */}
+            {form.pickup_type === 'delivery' && (
+              <div style={{ background:'#f8fafc', borderRadius:12, padding:14, marginBottom:14, border:'1px solid #e2e8f0' }}>
+                <div style={{ marginBottom:10 }}>
+                  <label style={lbl}>כתובת למשלוח</label>
+                  <input style={inp} type="text" placeholder="רחוב, עיר" value={form.delivery_address}
+                    onChange={e => setForm(p => ({...p,delivery_address:e.target.value}))} />
+                </div>
+                <div>
+                  <label style={lbl}>🚚 מחיר הובלה (₪)</label>
+                  <input style={{ ...inp, borderColor:'#6366f1' }} type="number" placeholder="0" value={form.delivery_price}
+                    onChange={e => setForm(p => ({...p,delivery_price:e.target.value}))}
+                    onFocus={e => e.target.style.borderColor='#6366f1'}
+                    onBlur={e => e.target.style.borderColor='#6366f1'} />
+                </div>
               </div>
             )}
 
@@ -278,9 +301,26 @@ export default function Rentals() {
             </div>
 
             {/* Total */}
-            <div style={{ background:'linear-gradient(135deg,#eef2ff,#f5f3ff)', borderRadius:12, padding:'14px 18px', textAlign:'center', marginBottom:20 }}>
-              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום</div>
-              <div style={{ fontSize:28, fontWeight:800, color:'#6366f1' }}>₪{calcTotal().toFixed(2)}</div>
+            <div style={{ background:'linear-gradient(135deg,#eef2ff,#f5f3ff)', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
+              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8, textAlign:'center' }}>פירוט עלויות</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:10 }}>
+                {form.pickup_type === 'delivery' && +form.delivery_price > 0 && (
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
+                    <span>🚚 הובלה</span>
+                    <span>₪{(+form.delivery_price).toLocaleString()}</span>
+                  </div>
+                )}
+                {+form.discount > 0 && (
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#10b981' }}>
+                    <span>🎁 הנחה</span>
+                    <span>-₪{(+form.discount).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign:'center', borderTop:'1px solid #c7d2fe', paddingTop:10 }}>
+                <div style={{ fontSize:12, color:'#94a3b8', marginBottom:4 }}>סה״כ לתשלום</div>
+                <div style={{ fontSize:28, fontWeight:800, color:'#6366f1' }}>₪{calcTotal().toFixed(2)}</div>
+              </div>
             </div>
 
             <div style={{ display:'flex', gap:10 }}>
@@ -301,4 +341,4 @@ export default function Rentals() {
 }
 
 const lbl = { display:'block', fontSize:13, fontWeight:600, color:'#374151', marginBottom:5 }
-const inp = { width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box' }
+const inp = { width:'100%', background:'#f8fafc', border:'1px solid #e2e8f0', color:'#1e293b', borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', boxSizing:'border-box', transition:'border-color 0.2s' }
