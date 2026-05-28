@@ -4,7 +4,8 @@ import { supabase } from '../supabaseClient'
 const STATUS_LABEL = { draft:'טיוטה', confirmed:'מאושר', active:'פעיל', returned:'הוחזר', cancelled:'בוטל' }
 const STATUS_COLOR = { draft:'#94a3b8', confirmed:'#f59e0b', active:'#10b981', returned:'#8b5cf6', cancelled:'#ef4444' }
 const STATUS_BG    = { draft:'#f8fafc', confirmed:'#fffbeb', active:'#ecfdf5', returned:'#f5f3ff', cancelled:'#fef2f2' }
-const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', pickup_type:'pickup', delivery_address:'', delivery_price:'0', assembly_price:'0', discount:'0', deposit_amount:'0', notes:'' }
+const EMPTY_FORM   = { customer_id:'', start_date:'', end_date:'', rental_days:1, pickup_type:'pickup', delivery_address:'', delivery_price:'0', assembly_price:'0', discount:'0', deposit_amount:'0', notes:'' }
+const DAY_PRESETS  = [1, 2, 3, 7]
 
 export default function Rentals() {
   const [rentals, setRentals]           = useState([])
@@ -34,6 +35,7 @@ export default function Rentals() {
   }
   useEffect(() => { load() }, [])
 
+  // בדיקת זמינות לפי תאריכים בלבד
   useEffect(() => {
     if (!form.start_date || !form.end_date || !modal) return
     const check = async () => {
@@ -69,6 +71,7 @@ export default function Rentals() {
       customer_id:      r.customer_id,
       start_date:       r.start_date,
       end_date:         r.end_date,
+      rental_days:      r.rental_days || 1,
       pickup_type:      r.pickup_type,
       delivery_address: r.delivery_address || '',
       delivery_price:   String(r.delivery_price || 0),
@@ -95,9 +98,9 @@ export default function Rentals() {
     return arr
   }, [])
 
+  // חישוב לפי rental_days — לא לפי תאריכים
   const calcSubtotal = () => {
-    if (!form.start_date || !form.end_date) return 0
-    const days = Math.max(1, Math.ceil((new Date(form.end_date) - new Date(form.start_date)) / 86400000) + 1)
+    const days = +form.rental_days || 1
     const itemsTotal = lines.reduce((s,l) => {
       const eq = equipment.find(e => e.id === l.equipment_id)
       return s + (eq ? eq.daily_rate * +l.quantity * days : 0)
@@ -108,12 +111,13 @@ export default function Rentals() {
   const calcTotal = () => calcSubtotal() * 1.18
 
   const save = async () => {
-    if (!form.customer_id || !form.start_date || !form.end_date) return alert('נא למלא שדות חובה')
+    if (!form.customer_id) return alert('נא לבחור לקוח')
     const conflicts = checkConflicts()
     if (conflicts.length > 0) return alert('⚠️ אין מספיק ציוד זמין:\n\n' + conflicts.join('\n'))
     setSaving(true)
     const payload = {
       ...form,
+      rental_days:    +form.rental_days || 1,
       discount:       +form.discount,
       deposit_amount: +form.deposit_amount,
       delivery_price: +form.delivery_price,
@@ -141,8 +145,7 @@ export default function Rentals() {
 
   const shareWhatsApp = (r) => {
     const customer = r.customers?.full_name || 'לקוח'
-    const days = Math.max(1, Math.ceil((new Date(r.end_date) - new Date(r.start_date)) / 86400000) + 1)
-    const msg = `שלום ${customer} 👋\n\n*אוורסט - השכרת ציוד אירועים*\n————————————————\n📅 *תאריכים:* ${r.start_date} עד ${r.end_date} (${days} ימים)\n${r.pickup_type === 'delivery' ? `🚚 *משלוח לכתובת:* ${r.delivery_address || '—'}` : '📦 *איסוף עצמי*'}\n${r.notes ? `📝 *הערות:* ${r.notes}` : ''}\n————————————————\nתודה שבחרת באוורסט! 🏔️`
+    const msg = `שלום ${customer} 👋\n\n*אוורסט - השכרת ציוד אירועים*\n————————————————\n📅 *תאריכים:* ${r.start_date || '—'} עד ${r.end_date || '—'}\n🗓️ *ימי השכרה:* ${r.rental_days || 1}\n${r.pickup_type === 'delivery' ? `🚚 *משלוח לכתובת:* ${r.delivery_address || '—'}` : '📦 *איסוף עצמי*'}\n${r.notes ? `📝 *הערות:* ${r.notes}` : ''}\n————————————————\nתודה שבחרת באוורסט! 🏔️`
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
@@ -157,8 +160,8 @@ export default function Rentals() {
     setRentals(p => p.filter(r => r.id !== id))
   }
 
-  const filtered       = rentals.filter(r => filterStatus==='all' || r.status===filterStatus)
-  const filteredEquip  = equipment.filter(e => e.name.includes(equipSearch))
+  const filtered      = rentals.filter(r => filterStatus==='all' || r.status===filterStatus)
+  const filteredEquip = equipment.filter(e => e.name.includes(equipSearch))
 
   if (loading) return (
     <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
@@ -178,6 +181,8 @@ export default function Rentals() {
         .chip-btn:hover { background: #eef2ff !important; color: #6366f1 !important; }
         .icon-btn { transition: all 0.15s; opacity:0.5; }
         .icon-btn:hover { opacity:1; transform:scale(1.1); }
+        .day-btn { transition: all 0.15s; cursor:pointer; border-radius:8px; padding:6px 14px; border:1px solid; font-size:13px; font-weight:600; }
+        .day-btn:hover { transform: translateY(-1px); }
       `}</style>
 
       {/* Header */}
@@ -225,8 +230,9 @@ export default function Rentals() {
                 <div>
                   <div style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{r.customers?.full_name || '—'}</div>
                   <div style={{ fontSize:12, color:'#94a3b8', marginTop:2, display:'flex', gap:8, flexWrap:'wrap' }}>
-                    <span>{r.start_date} → {r.end_date}</span>
-                    {r.delivery_price > 0 && <span style={{ color:'#6366f1', fontWeight:600 }}>🚚 ₪{r.delivery_price}</span>}
+                    {r.start_date && <span>{r.start_date} → {r.end_date}</span>}
+                    <span style={{ color:'#6366f1', fontWeight:600 }}>🗓️ {r.rental_days || 1} יום</span>
+                    {r.delivery_price > 0 && <span style={{ color:'#8b5cf6', fontWeight:600 }}>🚚 ₪{r.delivery_price}</span>}
                     {r.assembly_price > 0 && <span style={{ color:'#10b981', fontWeight:600 }}>🔨 ₪{r.assembly_price}</span>}
                   </div>
                   {r.notes && <div style={{ fontSize:11, color:'#94a3b8' }}>{r.notes}</div>}
@@ -238,7 +244,7 @@ export default function Rentals() {
                   {Object.entries(STATUS_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
                 <button className="icon-btn" onClick={() => shareWhatsApp(r)}
-                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }} title="שתף ב-WhatsApp">📱</button>
+                  style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>📱</button>
                 <button className="icon-btn" onClick={() => openEdit(r)}
                   style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:16, padding:4 }}>✏️</button>
                 <button className="icon-btn" onClick={() => del(r.id)}
@@ -266,15 +272,43 @@ export default function Rentals() {
               </select>
             </div>
 
-            {/* Dates */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
-              <div>
-                <label style={lbl}>מתאריך *</label>
-                <input style={inp} type="date" value={form.start_date} onChange={e => setForm(p => ({...p,start_date:e.target.value}))} />
+            {/* ימי השכרה */}
+            <div style={{ marginBottom:14 }}>
+              <label style={lbl}>🗓️ מספר ימי השכרה (משפיע על המחיר)</label>
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                {DAY_PRESETS.map(d => (
+                  <button key={d} className="day-btn"
+                    onClick={() => setForm(p => ({...p, rental_days:d}))}
+                    style={{
+                      borderColor: form.rental_days===d ? '#6366f1' : '#e2e8f0',
+                      background:  form.rental_days===d ? '#eef2ff' : '#fff',
+                      color:       form.rental_days===d ? '#6366f1' : '#64748b',
+                    }}>
+                    ×{d}
+                  </button>
+                ))}
+                <input type="number" min="1" value={form.rental_days}
+                  onChange={e => setForm(p => ({...p, rental_days: +e.target.value || 1}))}
+                  style={{ ...inp, width:80, textAlign:'center', fontWeight:700, color:'#6366f1' }} />
+                <span style={{ fontSize:13, color:'#94a3b8' }}>ימים</span>
               </div>
-              <div>
-                <label style={lbl}>עד תאריך *</label>
-                <input style={inp} type="date" value={form.end_date} onChange={e => setForm(p => ({...p,end_date:e.target.value}))} />
+            </div>
+
+            {/* תאריכים — רק לזמינות */}
+            <div style={{ background:'#f8fafc', borderRadius:12, padding:14, marginBottom:14, border:'1px solid #e2e8f0' }}>
+              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
+                <span>📅</span>
+                <span>תאריכים — לבדיקת זמינות מלאי בלבד (לא משפיע על המחיר)</span>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div>
+                  <label style={lbl}>מתאריך</label>
+                  <input style={inp} type="date" value={form.start_date} onChange={e => setForm(p => ({...p,start_date:e.target.value}))} />
+                </div>
+                <div>
+                  <label style={lbl}>עד תאריך</label>
+                  <input style={inp} type="date" value={form.end_date} onChange={e => setForm(p => ({...p,end_date:e.target.value}))} />
+                </div>
               </div>
             </div>
 
@@ -321,18 +355,11 @@ export default function Rentals() {
             {/* פריטים */}
             <div style={{ marginBottom:14 }}>
               <label style={lbl}>פריטים</label>
-
-              {/* חיפוש ציוד */}
               <div style={{ position:'relative', marginBottom:10 }}>
                 <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', fontSize:13 }}>🔍</span>
-                <input
-                  style={{ ...inp, paddingRight:32, fontSize:13 }}
-                  placeholder="חפש פריט לפי שם..."
-                  value={equipSearch}
-                  onChange={e => setEquipSearch(e.target.value)}
-                />
+                <input style={{ ...inp, paddingRight:32, fontSize:13 }} placeholder="חפש פריט לפי שם..."
+                  value={equipSearch} onChange={e => setEquipSearch(e.target.value)} />
               </div>
-
               {lines.map((l,i) => {
                 const avail = availability[l.equipment_id]
                 const isOver = l.equipment_id && avail !== undefined && +l.quantity > avail
@@ -392,7 +419,9 @@ export default function Rentals() {
 
             {/* Total */}
             <div style={{ background:'linear-gradient(135deg,#eef2ff,#f5f3ff)', borderRadius:12, padding:'14px 18px', marginBottom:20 }}>
-              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8, textAlign:'center' }}>פירוט עלויות</div>
+              <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8, textAlign:'center' }}>
+                פירוט עלויות — {form.rental_days} יום
+              </div>
               <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:10 }}>
                 {form.pickup_type === 'delivery' && +form.delivery_price > 0 && (
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'#475569' }}>
