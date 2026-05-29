@@ -137,32 +137,33 @@ export default function App() {
   }
 
   useEffect(() => {
-    let done = false
+    const init = async () => {
+      try {
+        // נותנים ל-getSession מקסימום 4 שניות. אם הוא תקוע - מנקים ומציגים מסך התחברות
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise((resolve) =>
+          setTimeout(() => resolve({ data: { session: null }, timedOut: true }), 4000)
+        )
+        const result = await Promise.race([sessionPromise, timeoutPromise])
 
-    // אם הטעינה נתקעת יותר מ-8 שניות — מנקים session תקוע ומתחילים מחדש
-    const stuckTimer = setTimeout(async () => {
-      if (!done) {
-        console.warn('Session stuck - clearing and reloading')
-        try { await supabase.auth.signOut() } catch (e) { /* ignore */ }
-        // ניקוי ידני של ה-token מ-localStorage למקרה ש-signOut נתקע
-        Object.keys(localStorage)
-          .filter(k => k.startsWith('sb-'))
-          .forEach(k => localStorage.removeItem(k))
-        window.location.reload()
-      }
-    }, 8000)
-
-    supabase.auth.getSession()
-      .then(async ({ data }) => {
-        setSession(data.session)
-        if (data.session) await fetchProfile(data.session.user.id)
-      })
-      .catch(console.error)
-      .finally(() => {
-        done = true
-        clearTimeout(stuckTimer)
+        if (result.timedOut) {
+          console.warn('getSession timed out - clearing token')
+          Object.keys(localStorage)
+            .filter(k => k.startsWith('sb-'))
+            .forEach(k => localStorage.removeItem(k))
+          setSession(null)
+        } else {
+          setSession(result.data.session)
+          if (result.data.session) await fetchProfile(result.data.session.user.id)
+        }
+      } catch (err) {
+        console.error('Session error:', err)
+        setSession(null)
+      } finally {
         setLoading(false)
-      })
+      }
+    }
+    init()
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_e, s) => {
       setSession(s)
@@ -171,7 +172,6 @@ export default function App() {
     })
 
     return () => {
-      clearTimeout(stuckTimer)
       listener.subscription.unsubscribe()
     }
   }, [])
