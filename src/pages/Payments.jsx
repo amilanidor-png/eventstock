@@ -1,6 +1,25 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
+const SUPA_URL = 'https://jeaizwuqxclvayfdbtcn.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplYWl6d3VxeGNsdmF5ZmRidGNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MTE3ODYsImV4cCI6MjA5NTM4Nzc4Nn0.Vtpq8pZ5o1SgIaaKVTtTRUgsu3hyIRQHYUccT8rl35c'
+
+function authHeaders() {
+  const tokenStr = localStorage.getItem('sb-jeaizwuqxclvayfdbtcn-auth-token')
+  const token = tokenStr ? JSON.parse(tokenStr) : null
+  return {
+    apikey: SUPA_KEY,
+    Authorization: 'Bearer ' + (token?.access_token || SUPA_KEY),
+    'Content-Type': 'application/json'
+  }
+}
+const supaGet = async (path) => {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, { headers: authHeaders() })
+    return await res.json()
+  } catch (e) { console.error('supaGet error:', path, e); return [] }
+}
+
 const T = {
   bg:'#0d0d0d', surface:'#161616', card:'#1a1a1a', border:'#2a2a2a',
   red:'#e53935', redDark:'#b71c1c', redGlow:'rgba(229,57,53,0.18)',
@@ -29,13 +48,34 @@ export default function Payments() {
   const [activeTab, setActiveTab] = useState('payments')
 
   const load = async () => {
-    const [{ data:pays }, { data:rents }, { data:sums }] = await Promise.all([
-      supabase.from('payments').select('*, rentals(id, start_date, end_date, customers(full_name))').order('paid_at',{ascending:false}),
-      supabase.from('rentals').select('id, start_date, end_date, customers(full_name)').not('status','eq','cancelled').order('start_date',{ascending:false}),
-      supabase.from('rental_payment_summary').select('*'),
+    const [pays, rents, custs, sums] = await Promise.all([
+      supaGet('payments?select=*&order=paid_at.desc'),
+      supaGet('rentals?select=id,start_date,end_date,customer_id,status&status=neq.cancelled&order=start_date.desc'),
+      supaGet('customers?select=id,full_name'),
+      supaGet('rental_payment_summary?select=*'),
     ])
-    setPayments(pays||[]); setRentals(rents||[])
-    const map={}; (sums||[]).forEach(s=>{ map[s.rental_id]=s }); setSummaries(map)
+
+    const custMap = {}
+    ;(Array.isArray(custs) ? custs : []).forEach(c => { custMap[c.id] = c })
+
+    const rentMap = {}
+    const rentsWithCust = (Array.isArray(rents) ? rents : []).map(r => {
+      const withCust = { ...r, customers: custMap[r.customer_id] || null }
+      rentMap[r.id] = withCust
+      return withCust
+    })
+
+    const paysWithRel = (Array.isArray(pays) ? pays : []).map(p => ({
+      ...p, rentals: rentMap[p.rental_id] || null
+    }))
+
+    setPayments(paysWithRel)
+    setRentals(rentsWithCust)
+
+    const map = {}
+    ;(Array.isArray(sums) ? sums : []).forEach(s => { map[s.rental_id] = s })
+    setSummaries(map)
+
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -43,14 +83,28 @@ export default function Payments() {
   const save = async () => {
     if (!form.rental_id||!form.amount) return alert('נא למלא הזמנה וסכום')
     setSaving(true)
-    await supabase.from('payments').insert({ rental_id:form.rental_id, amount:+form.amount, method:form.method, reference:form.reference, notes:form.notes, is_deposit:form.is_deposit, paid_at:new Date().toISOString() })
+    try {
+      await fetch(`${SUPA_URL}/rest/v1/payments`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          rental_id: form.rental_id, amount: +form.amount, method: form.method,
+          reference: form.reference, notes: form.notes, is_deposit: form.is_deposit,
+          paid_at: new Date().toISOString()
+        })
+      })
+    } catch (e) { console.error('save error:', e) }
     await load(); setModal(false); setForm(EMPTY); setSaving(false)
   }
 
   const del = async (id) => {
     if (!confirm('למחוק?')) return
-    await supabase.from('payments').delete().eq('id',id)
-    setPayments(p=>p.filter(x=>x.id!==id)); await load()
+    try {
+      await fetch(`${SUPA_URL}/rest/v1/payments?id=eq.${id}`, {
+        method: 'DELETE', headers: authHeaders()
+      })
+    } catch (e) { console.error('delete error:', e) }
+    await load()
   }
 
   const filtered = payments.filter(p => {
