@@ -137,41 +137,33 @@ export default function App() {
   }
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        // נותנים ל-getSession מקסימום 4 שניות. אם הוא תקוע - מנקים ומציגים מסך התחברות
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((resolve) =>
-          setTimeout(() => resolve({ data: { session: null }, timedOut: true }), 4000)
-        )
-        const result = await Promise.race([sessionPromise, timeoutPromise])
+    let settled = false
 
-        if (result.timedOut) {
-          console.warn('getSession timed out - clearing token')
-          Object.keys(localStorage)
-            .filter(k => k.startsWith('sb-'))
-            .forEach(k => localStorage.removeItem(k))
-          setSession(null)
-        } else {
-          setSession(result.data.session)
-          if (result.data.session) await fetchProfile(result.data.session.user.id)
-        }
-      } catch (err) {
-        console.error('Session error:', err)
-        setSession(null)
-      } finally {
+    const finish = () => {
+      if (!settled) {
+        settled = true
         setLoading(false)
       }
     }
-    init()
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      setSession(data.session)
+      if (data.session) await fetchProfile(data.session.user.id)
+      finish()
+    }).catch(() => finish())
+
+    // רשת בטחון: אם משהו נתקע, מפסיק טעינה אחרי 10 שניות
+    const safety = setTimeout(finish, 10000)
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_e, s) => {
       setSession(s)
       if (s) await fetchProfile(s.user.id)
       else setProfile(null)
+      finish()
     })
 
     return () => {
+      clearTimeout(safety)
       listener.subscription.unsubscribe()
     }
   }, [])
