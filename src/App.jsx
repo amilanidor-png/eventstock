@@ -137,10 +137,20 @@ export default function App() {
   }
 
   useEffect(() => {
-    const safety = setTimeout(() => {
-      console.warn('Loading timeout - forcing render')
-      setLoading(false)
-    }, 5000)
+    let done = false
+
+    // אם הטעינה נתקעת יותר מ-8 שניות — מנקים session תקוע ומתחילים מחדש
+    const stuckTimer = setTimeout(async () => {
+      if (!done) {
+        console.warn('Session stuck - clearing and reloading')
+        try { await supabase.auth.signOut() } catch (e) { /* ignore */ }
+        // ניקוי ידני של ה-token מ-localStorage למקרה ש-signOut נתקע
+        Object.keys(localStorage)
+          .filter(k => k.startsWith('sb-'))
+          .forEach(k => localStorage.removeItem(k))
+        window.location.reload()
+      }
+    }, 8000)
 
     supabase.auth.getSession()
       .then(async ({ data }) => {
@@ -149,7 +159,8 @@ export default function App() {
       })
       .catch(console.error)
       .finally(() => {
-        clearTimeout(safety)
+        done = true
+        clearTimeout(stuckTimer)
         setLoading(false)
       })
 
@@ -160,7 +171,7 @@ export default function App() {
     })
 
     return () => {
-      clearTimeout(safety)
+      clearTimeout(stuckTimer)
       listener.subscription.unsubscribe()
     }
   }, [])
