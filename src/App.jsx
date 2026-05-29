@@ -15,6 +15,9 @@ import Contract from './pages/Contract'
 import Login from './pages/Login'
 import GlobalSearch from './GlobalSearch'
 
+const SUPA_URL = 'https://jeaizwuqxclvayfdbtcn.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplYWl6d3VxeGNsdmF5ZmRidGNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MTE3ODYsImV4cCI6MjA5NTM4Nzc4Nn0.Vtpq8pZ5o1SgIaaKVTtTRUgsu3hyIRQHYUccT8rl35c'
+
 const ALL_NAV = [
   { path: '/',           label: 'עסק',     icon: '💼', roles: ['owner','manager'] },
   { path: '/dashboard',  label: 'בקרה',    icon: '📊', roles: ['owner','manager','staff'] },
@@ -117,33 +120,32 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const fetchProfile = async (userId, retries = 3) => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const { data: prof, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single()
-        if (!error && prof) {
-          setProfile(prof)
-          return
+  // טוען פרופיל דרך fetch ישיר (יותר אמין מהספרייה)
+  const fetchProfile = async (userId) => {
+    try {
+      const tokenStr = localStorage.getItem('sb-jeaizwuqxclvayfdbtcn-auth-token')
+      if (!tokenStr) return
+      const token = JSON.parse(tokenStr)
+      const res = await fetch(
+        `${SUPA_URL}/rest/v1/profiles?select=*&id=eq.${userId}`,
+        {
+          headers: {
+            apikey: SUPA_KEY,
+            Authorization: 'Bearer ' + token.access_token
+          }
         }
-      } catch (err) {
-        console.error('Profile fetch attempt', i + 1, 'failed:', err)
-      }
-      await new Promise(r => setTimeout(r, 500))
+      )
+      const data = await res.json()
+      if (data && data[0]) setProfile(data[0])
+    } catch (err) {
+      console.error('fetchProfile error:', err)
     }
   }
 
   useEffect(() => {
     let settled = false
-
     const finish = () => {
-      if (!settled) {
-        settled = true
-        setLoading(false)
-      }
+      if (!settled) { settled = true; setLoading(false) }
     }
 
     supabase.auth.getSession().then(async ({ data }) => {
@@ -152,7 +154,6 @@ export default function App() {
       finish()
     }).catch(() => finish())
 
-    // רשת בטחון: אם משהו נתקע, מפסיק טעינה אחרי 10 שניות
     const safety = setTimeout(finish, 10000)
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_e, s) => {
